@@ -180,6 +180,24 @@ input:focus,select:focus{outline:0;border-color:var(--em);box-shadow:0 0 0 4px r
 .avatar img{width:100%;height:100%;object-fit:cover}
 .acct{display:flex;align-items:center;gap:12px;padding:12px;border:1px solid var(--line);border-radius:12px;margin-bottom:14px;background:#F8FBFA}
 .acct div{flex:1;min-width:0;font-size:13px}.acct b{display:block;overflow:hidden;text-overflow:ellipsis}
+/* ---- mobile overflow fixes ---- */
+.toolbar select{width:auto}
+html,body{max-width:100%;overflow-x:hidden}
+input,select{width:100%;min-width:0;max-width:100%}
+input[type=date]{-webkit-appearance:none;appearance:none;min-height:44px;display:block}
+input[type=date]::-webkit-date-and-time-value{text-align:left}
+label,form.entry>*,.card,.kpi,.filters>*,.toolbar>*{min-width:0}
+form.entry{grid-template-columns:repeat(auto-fit,minmax(min(170px,100%),1fr))}
+@media(max-width:760px){
+ form.entry{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .toolbar label{flex:1 1 100%;display:flex;flex-direction:row;align-items:center;gap:8px}
+ .toolbar label select{flex:1}
+ .acct{flex-wrap:wrap}.acct .btn{width:100%}
+ #setForm{grid-template-columns:1fr!important}
+ .tblwrap td input{width:120px!important;max-width:50%}
+ .chips{max-width:100%}
+}
+@media(max-width:380px){form.entry{grid-template-columns:minmax(0,1fr)}}
 </style>
 </head>
 <body>
