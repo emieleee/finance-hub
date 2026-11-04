@@ -198,6 +198,10 @@ form.entry{grid-template-columns:repeat(auto-fit,minmax(min(170px,100%),1fr))}
  .chips{max-width:100%}
 }
 @media(max-width:380px){form.entry{grid-template-columns:minmax(0,1fr)}}
+.catcell{display:inline-flex;align-items:center;gap:10px}
+.cico{width:30px;height:30px;border-radius:9px;background:color-mix(in srgb,var(--c) 14%,#fff);color:var(--c);display:inline-grid;place-items:center;flex:none}
+.cico svg{width:16px;height:16px}
+@media(max-width:760px){.cico{width:26px;height:26px;border-radius:8px}.cico svg{width:14px;height:14px}.tblwrap td .catcell{justify-content:flex-end}}
 </style>
 </head>
 <body>
@@ -580,6 +584,37 @@ const IC={
  shield:SV('<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>'),stack:SV('<path d="M12 2l10 5-10 5L2 7z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>'),
  check:SV('<path d="M20 6L9 17l-5-5"/>')
 };
+
+/* ---- category icons ---- */
+const CI={
+ 'Rent':'<path d="M3 10l9-7 9 7v10a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>',
+ 'Food':'<path d="M7 2v20"/><path d="M4 2v6a3 3 0 0 0 6 0V2"/><path d="M17 2c-2 2-3 5-3 8h3v12"/>',
+ 'Commute':'<rect x="4" y="3" width="16" height="15" rx="3"/><path d="M4 11h16"/><circle cx="8" cy="14.5" r="1"/><circle cx="16" cy="14.5" r="1"/><path d="M7 18v3M17 18v3"/>',
+ 'Grocery':'<circle cx="9" cy="20" r="1.5"/><circle cx="18" cy="20" r="1.5"/><path d="M2 3h3l2.5 12h11l2-8H6"/>',
+ 'Online Shopping':'<path d="M5 7h14l-1 14H6z"/><path d="M9 7a3 3 0 0 1 6 0"/>',
+ 'Online Payment':'<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20M6 15h4"/>',
+ 'Gift':'<rect x="3" y="8" width="18" height="4" rx="1"/><path d="M5 12v9h14v-9M12 8v13"/><path d="M12 8S10 3 7.5 4.5 9 8 12 8zM12 8s2-5 4.5-3.5S15 8 12 8z"/>',
+ 'Electric':'<path d="M13 2L4 14h7l-1 8 9-12h-7z"/>',
+ 'Water':'<path d="M12 2.5s7 7.5 7 12.5a7 7 0 0 1-14 0c0-5 7-12.5 7-12.5z"/>',
+ 'Internet':'<path d="M2 8.5a15 15 0 0 1 20 0"/><path d="M5 12a10 10 0 0 1 14 0"/><path d="M8.5 15.5a5 5 0 0 1 7 0"/><circle cx="12" cy="19" r="1" fill="currentColor"/>',
+ 'Salary':'<rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M3 13h18"/>',
+ '13th Month Pay':'<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>',
+ 'Bonus':'<path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9z"/>',
+ 'Side Gig':'<rect x="4" y="4" width="16" height="11" rx="2"/><path d="M2 19h20"/>',
+ 'Other Income':'<ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v6c0 1.7 3.1 3 7 3s7-1.3 7-3V6M5 12v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6"/>',
+ 'Emergency Fund':'<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M12 8v6M9 11h6"/>',
+ 'General Savings':'<path d="M19 7h-1.5A6 6 0 0 0 6 9.5V10a3 3 0 0 0-3 3v1h3a6 6 0 0 0 3 4v2h3v-1h2v1h3v-2.5A6 6 0 0 0 20 12V8a1 1 0 0 0-1-1z"/>',
+ 'Investment':'<path d="M3 17l6-6 4 4 8-8"/><path d="M14 7h7v7"/>',
+ 'Travel / Major Purchase':'<path d="M10.5 13.5L3 11l18-8-8 18-2.5-7.5z"/>',
+ 'Goal':'<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/>'
+};
+const CI_DEFAULT='<path d="M20 12l-8 8-9-9V3h8z"/><circle cx="7.5" cy="7.5" r="1.5"/>';
+function catIcon(kind,name){
+  const list=S.lists[kind]||[]; const i=list.indexOf(name);
+  const col=PAL[(i<0?list.length:i)%PAL.length];
+  return `<span class="cico" style="--c:${col}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${CI[name]||CI_DEFAULT}</svg></span>`;
+}
+const catCell=(kind,name)=>`<span class="catcell">${catIcon(kind,name)}${esc(name)}</span>`;
 const kpi=(l,v,s,cls='',ic='wallet',tone='em')=>`<div class="kpi"><div class="ico t-${tone}">${IC[ic]||''}</div><div><div class="l">${l}</div><div class="v ${cls}">${v}</div>${s?`<div class="s">${s}</div>`:''}</div></div>`;
 if(typeof Chart!=='undefined'){Chart.defaults.font.family='"Segoe UI Variable","Segoe UI",Inter,Roboto,Arial,sans-serif';Chart.defaults.color='#64748B';Chart.defaults.plugins.legend.labels.usePointStyle=true;Chart.defaults.plugins.legend.labels.boxWidth=8;Chart.defaults.plugins.tooltip.backgroundColor='#0F1E3D';Chart.defaults.plugins.tooltip.padding=10;Chart.defaults.plugins.tooltip.cornerRadius=8;}
 const GRID={grid:{color:'#EEF2F7'},border:{display:false}};
@@ -629,7 +664,7 @@ function renderDash(){
   // budget table
   let rows=S.lists.expense.map(c=>{const bd=+S.budget[c]||0, sp=sum(monthExp.filter(e=>e.type===c)), r=bd?sp/bd:(sp>0?1.01:0);
     const cls=r>1?'over':r>=.8?'near':'';
-    return `<tr><td>${esc(c)}</td><td class="n">${fmt(bd)}</td><td class="n">${fmt(sp)}</td><td class="n ${bd-sp<0?'neg':''}">${fmt(bd-sp)}</td><td><div class="bar"><i class="${cls}" style="width:${Math.min(r,1)*100}%"></i></div></td></tr>`;}).join('');
+    return `<tr><td>${catCell('expense',c)}</td><td class="n">${fmt(bd)}</td><td class="n">${fmt(sp)}</td><td class="n ${bd-sp<0?'neg':''}">${fmt(bd-sp)}</td><td><div class="bar"><i class="${cls}" style="width:${Math.min(r,1)*100}%"></i></div></td></tr>`;}).join('');
   document.getElementById('budgetTbl').innerHTML=`<table><tr><th>Category</th><th class="n">Budget</th><th class="n">Spent</th><th class="n">Remaining</th><th>Used</th></tr>${rows}
     <tr class="total"><td>Total</td><td class="n">${fmt(budTotal)}</td><td class="n">${fmt(spentM)}</td><td class="n ${budTotal-spentM<0?'neg':''}">${fmt(budTotal-spentM)}</td><td>${pct(used)}</td></tr></table>`;
 
@@ -648,7 +683,7 @@ function renderDash(){
 
   // income breakdown
   const pInc=S.income.filter(r=>inR(r.date,a,b));
-  const ib=S.lists.income.map(t=>{const v=sum(pInc.filter(r=>r.type===t));return `<tr><td>${esc(t)}</td><td class="n">${fmt(v)}</td><td class="n">${pct(p.inc?v/p.inc:0)}</td></tr>`;}).join('');
+  const ib=S.lists.income.map(t=>{const v=sum(pInc.filter(r=>r.type===t));return `<tr><td>${catCell('income',t)}</td><td class="n">${fmt(v)}</td><td class="n">${pct(p.inc?v/p.inc:0)}</td></tr>`;}).join('');
   document.getElementById('incBreak').innerHTML=`<table><tr><th>Income type</th><th class="n">Amount</th><th class="n">% of income</th></tr>${ib}<tr class="total"><td>Total</td><td class="n">${fmt(p.inc)}</td><td class="n">${p.inc?'100.0%':'0.0%'}</td></tr></table>`;
 
   // goals
@@ -685,14 +720,14 @@ function renderIncome(){
   const f=document.getElementById('incFilter').value;
   const rs=S.income.filter(r=>f==='all'||!r.date||inMonth(r,f)).sort(byDate);
   document.getElementById('incTbl').innerHTML=rs.length?`<table><tr><th>Type</th><th class="n">Amount</th><th>Date received</th><th>Source</th><th>Pay cycle</th><th>Coverage</th><th>Standard payday</th><th>Adjusted</th><th>Timing</th><th>Note</th><th></th></tr>
-    ${rs.map(r=>`<tr><td>${esc(r.type)}</td><td class="n">${fmt(r.amount)}</td><td>${nice(r.date)||'—'}</td><td>${esc(r.desc)}</td><td>${payCycle(r)}</td><td>${r.covStart?nice(r.covStart)+' – '+nice(r.covEnd):''}</td><td>${nice(stdPayday(r))}</td><td>${nice(r.adjPay)}</td><td>${statusPill(timing(r))}</td><td>${esc(r.note)}</td><td>${actions('income',r.id)}</td></tr>`).join('')}
+    ${rs.map(r=>`<tr><td>${catCell('income',r.type)}</td><td class="n">${fmt(r.amount)}</td><td>${nice(r.date)||'—'}</td><td>${esc(r.desc)}</td><td>${payCycle(r)}</td><td>${r.covStart?nice(r.covStart)+' – '+nice(r.covEnd):''}</td><td>${nice(stdPayday(r))}</td><td>${nice(r.adjPay)}</td><td>${statusPill(timing(r))}</td><td>${esc(r.note)}</td><td>${actions('income',r.id)}</td></tr>`).join('')}
     <tr class="total"><td>Total</td><td class="n">${fmt(sum(rs))}</td><td colspan="9"></td></tr></table>`:'<div class="empty">No income recorded.</div>';
 }
 function renderExpenses(){
   const f=document.getElementById('expFilter').value, c=document.getElementById('expCatFilter').value;
   const rs=S.expenses.filter(r=>inMonth(r,f)&&(c==='all'||r.type===c)).sort(byDate);
   document.getElementById('expTbl').innerHTML=rs.length?`<table><tr><th>Date</th><th>Category</th><th class="n">Amount</th><th>Paid from</th><th>Pay period</th><th>Note</th><th></th></tr>
-    ${rs.map(r=>`<tr><td>${nice(r.date)}</td><td>${esc(r.type)}</td><td class="n">${fmt(r.amount)}</td><td>${r.paidFrom==='Goal Funds'?'<span class="pill warn">Goal Funds</span>':'Cash Balance'}</td><td>${payPeriod(r.date)}</td><td>${esc(r.note)}</td><td>${actions('expenses',r.id)}</td></tr>`).join('')}
+    ${rs.map(r=>`<tr><td>${nice(r.date)}</td><td>${catCell('expense',r.type)}</td><td class="n">${fmt(r.amount)}</td><td>${r.paidFrom==='Goal Funds'?'<span class="pill warn">Goal Funds</span>':'Cash Balance'}</td><td>${payPeriod(r.date)}</td><td>${esc(r.note)}</td><td>${actions('expenses',r.id)}</td></tr>`).join('')}
     <tr class="total"><td colspan="2">Total (${rs.length})</td><td class="n">${fmt(sum(rs))}</td><td colspan="4"></td></tr></table>`:'<div class="empty">No expenses for this filter.</div>';
 }
 function renderSavings(){
@@ -700,10 +735,10 @@ function renderSavings(){
   document.getElementById('kpiSav').innerHTML=kpi('Total savings balance',fmt(b.totalSav),'','','shield','navy')+kpi('Other savings',fmt(b.other),'','','piggy','teal')+kpi('Goal funds',fmt(b.goalFunds),'','','target','violet')+kpi('Total deposited',fmt(sum(S.savings.filter(r=>r.action==='Deposit'))),'','','up','em')+kpi('Total withdrawn',fmt(sum(S.savings.filter(r=>r.action==='Withdrawal'))),'','','down','red');
   const ac=S.lists.savings.map(a=>{const rs=S.savings.filter(r=>r.account===a&&inR(r.date,st,t));const dep=sum(rs.filter(r=>r.action==='Deposit')),wd=sum(rs.filter(r=>r.action==='Withdrawal'));
     let extra=a==='Goal'?(+s.startGoal||0)-b.goalExp:0; return {a,dep,wd,extra,bal:dep-wd+extra};});
-  document.getElementById('savAcctTbl').innerHTML=`<table><tr><th>Account</th><th class="n">Deposited</th><th class="n">Withdrawn</th><th class="n">Adjustments</th><th class="n">Net</th></tr>${ac.map(x=>`<tr><td>${esc(x.a)}</td><td class="n">${fmt(x.dep)}</td><td class="n">${fmt(x.wd)}</td><td class="n">${x.extra?fmt(x.extra):''}</td><td class="n">${fmt(x.bal)}</td></tr>`).join('')}
+  document.getElementById('savAcctTbl').innerHTML=`<table><tr><th>Account</th><th class="n">Deposited</th><th class="n">Withdrawn</th><th class="n">Adjustments</th><th class="n">Net</th></tr>${ac.map(x=>`<tr><td>${catCell('savings',x.a)}</td><td class="n">${fmt(x.dep)}</td><td class="n">${fmt(x.wd)}</td><td class="n">${x.extra?fmt(x.extra):''}</td><td class="n">${fmt(x.bal)}</td></tr>`).join('')}
     <tr><td>Starting other savings</td><td colspan="3"></td><td class="n">${fmt(s.startOther)}</td></tr></table><div class="note">Goal adjustments = starting goal fund balance − goal-funded expenses.</div>`;
   const rs=[...S.savings].sort(byDate);
-  document.getElementById('savTbl').innerHTML=rs.length?`<table><tr><th>Date</th><th>Action</th><th>Account</th><th class="n">Amount</th><th>Note</th><th></th></tr>${rs.map(r=>`<tr><td>${nice(r.date)}</td><td><span class="pill ${r.action==='Deposit'?'good':'bad'}">${r.action}</span></td><td>${esc(r.account)}</td><td class="n">${fmt(r.amount)}</td><td>${esc(r.note)}</td><td>${actions('savings',r.id)}</td></tr>`).join('')}</table>`:'<div class="empty">No savings activity yet.</div>';
+  document.getElementById('savTbl').innerHTML=rs.length?`<table><tr><th>Date</th><th>Action</th><th>Account</th><th class="n">Amount</th><th>Note</th><th></th></tr>${rs.map(r=>`<tr><td>${nice(r.date)}</td><td><span class="pill ${r.action==='Deposit'?'good':'bad'}">${r.action}</span></td><td>${catCell('savings',r.account)}</td><td class="n">${fmt(r.amount)}</td><td>${esc(r.note)}</td><td>${actions('savings',r.id)}</td></tr>`).join('')}</table>`:'<div class="empty">No savings activity yet.</div>';
 }
 function renderGoals(){
   const b=balances(), gs=goalStats(), alloc=sum(S.allocs), need=sum(gs,g=>g.need);
@@ -717,7 +752,7 @@ function renderGoals(){
 function renderSettings(){
   const ae=document.activeElement; if(ae&&ae.closest&&ae.closest('#tab-settings')&&ae.tagName==='INPUT') return;
   const f=document.getElementById('setForm'); Object.entries(S.settings).forEach(([k,v])=>{if(f.elements[k]) f.elements[k].value=v;});
-  document.getElementById('budEdit').innerHTML=`<table><tr><th>Category</th><th class="n">Budget (PHP)</th></tr>${S.lists.expense.map(c=>`<tr><td>${esc(c)}</td><td class="n"><input type="number" step="0.01" min="0" data-bud="${esc(c)}" value="${+S.budget[c]||0}" style="width:130px;text-align:right"></td></tr>`).join('')}
+  document.getElementById('budEdit').innerHTML=`<table><tr><th>Category</th><th class="n">Budget (PHP)</th></tr>${S.lists.expense.map(c=>`<tr><td>${catCell('expense',c)}</td><td class="n"><input type="number" step="0.01" min="0" data-bud="${esc(c)}" value="${+S.budget[c]||0}" style="width:130px;text-align:right"></td></tr>`).join('')}
     <tr class="total"><td>Total</td><td class="n">${fmt(S.lists.expense.reduce((t,c)=>t+(+S.budget[c]||0),0))}</td></tr></table>`;
   const L={expense:'Expense categories',income:'Income types',savings:'Savings accounts'};
   document.getElementById('listsEdit').innerHTML=Object.entries(L).map(([k,l])=>`<div style="margin-bottom:14px"><h3>${l}</h3><div class="chips">${S.lists[k].map((x,i)=>`<span class="chip">${esc(x)}${(k==='savings'&&x==='Goal')||(k==='income'&&x==='Salary')?'':`<button data-rmlist="${k}" data-i="${i}" title="Remove">×</button>`}</span>`).join('')}</div>
