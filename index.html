@@ -5,6 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0F1E3D">
 <title>Finance Hub</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Finance Hub">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <script>(function(){var t='auto';try{t=localStorage.getItem('fh.theme')||'auto'}catch(e){}var d=t==='dark'||(t==='auto'&&window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.dataset.theme=d?'dark':'light';document.documentElement.dataset.pref=t;})();</script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js" integrity="sha384-iU8HYtnGQ8Cy4zl7gbNMOhsDTTKX02BTXptVP/vqAWIaTfM7isw76iyZCsjL2eVi" crossorigin="anonymous"></script>
 <style>
@@ -340,6 +347,18 @@ details.sec>summary:hover{color:var(--ink)}
 .hm-stats span{display:block;font-size:11px;color:#94A3B8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .hm-stats b{display:block;color:#fff;font-size:15px;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 @media(max-width:760px){.hm-stats div{padding:10px 8px 0}.hm-stats b{font-size:13px}.hm-status{flex-wrap:wrap}.hm-status .sbtn{width:100%}}
+/* phase 3: update banner, backups, install */
+#updBar{position:fixed;left:50%;top:calc(12px + env(safe-area-inset-top));transform:translate(-50%,-140%);z-index:95;background:#0F1E3D;color:#fff;border:1px solid rgba(255,255,255,.12);border-left:4px solid var(--em);border-radius:14px;padding:8px 8px 8px 16px;display:flex;align-items:center;gap:14px;box-shadow:0 12px 30px rgba(15,30,61,.35);font-size:13px;font-weight:600;transition:transform .3s ease;max-width:calc(100% - 24px)}
+#updBar.show{transform:translate(-50%,0)}
+#updBar button{border:0;background:var(--em);color:#fff;font-weight:800;border-radius:10px;padding:9px 14px;cursor:pointer;font-size:13px;white-space:nowrap}
+#updBar .x{background:transparent;color:#94A3B8;padding:6px 8px;font-size:18px}
+.alert .abtn{margin-left:auto;flex:none}
+.kv{display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px dashed var(--line);font-size:13px}
+.kv:last-of-type{border-bottom:0}.kv span{color:var(--muted)}.kv b{text-align:right}
+.toggle{display:flex;align-items:center;gap:10px;font-size:13px;color:var(--ink);font-weight:600;cursor:pointer;flex-direction:row;margin:10px 0}
+.toggle input{width:20px;height:20px;min-height:0;accent-color:var(--em);flex:none}
+.grecaptcha-badge{visibility:hidden!important}
+html.standalone .topbar{padding-top:env(safe-area-inset-top)}
 </style>
 </head>
 <body class="loading">
@@ -492,15 +511,29 @@ details.sec>summary:hover{color:var(--ink)}
     <div>
       <div class="card"><h2>Appearance</h2><div class="seg" id="themeSeg"><button data-theme-set="auto">Auto</button><button data-theme-set="light">Light</button><button data-theme-set="dark">Dark</button></div><div class="note">Auto follows your phone or computer's light/dark setting.</div></div>
       <div class="card">
-        <h2>Account &amp; data</h2>
+        <h2>Account</h2>
         <div class="acct"><div class="avatar" id="acctAv"></div><div>Signed in as<b id="acctEmail">—</b></div><button class="btn ghost sm" id="btnSignOut">Sign out</button></div>
-        <p class="note" style="margin-top:0">Your data syncs to your private cloud account in real time and works offline. Export a backup now and then as an extra safety copy.</p>
+        <p class="note" style="margin-top:0">Your data syncs to your private cloud account in real time and works offline.</p>
+        <div id="secInfo" class="note"></div>
+      </div>
+      <div class="card" id="backupCard">
+        <h2>Backups</h2>
+        <div id="backupInfo"></div>
+        <div class="sec-title" style="margin-top:14px">Save backups to</div>
+        <div class="seg" id="bkSeg"><button data-bkto="file">This device</button><button data-bkto="drive">Google Drive</button></div>
+        <div class="note" id="driveNote"></div>
+        <label class="toggle"><input type="checkbox" id="bkRemind"> Remind me to back up every month</label>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
-          <button class="btn sec sm" id="btnExport">Export backup (JSON)</button>
+          <button class="btn sm" data-backup>Back up now</button>
+          <button class="btn sec sm" id="btnExport">Download backup (JSON)</button>
           <button class="btn sec sm" id="btnCsv">Export transactions (CSV)</button>
           <label class="btn ghost sm" style="flex-direction:row;align-items:center;cursor:pointer">Import backup<input type="file" id="fileImport" accept=".json" style="display:none"></label>
           <button class="btn danger sm" id="btnClear">Clear all entries</button>
         </div>
+      </div>
+      <div class="card">
+        <h2>App</h2>
+        <div id="appInfo"></div>
         <div style="margin-top:12px"><button class="linkbtn" data-ckshow>Show the setup checklist again</button></div>
       </div>
     </div>
@@ -632,22 +665,31 @@ details.sec>summary:hover{color:var(--ink)}
     <button data-goto="settings"><span class="ico t-navy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></span>Settings</button>
   </div>
 </div>
+<div id="updBar" role="status"><span id="updTxt">New version available</span><button id="updBtn">Tap to refresh</button><button class="x" id="updX" aria-label="Dismiss">×</button></div>
 <div class="toast" id="toast"></div>
 <script>
+/* ================= CONFIG =================
+   Paste your keys between the quotes (see the Phase 3 setup guide).
+   Leave a value empty to keep that feature switched off. */
+window.FH_CONFIG={
+  googleClientId:'',      // Google Drive backups – OAuth "Web client" ID, ends with .apps.googleusercontent.com
+  recaptchaSiteKey:''     // Firebase App Check – reCAPTCHA v3 site key
+};
+const APP_VERSION='3.0';
 /* ================= STATE ================= */
 const $=id=>document.getElementById(id);
 const uid=()=>(crypto.randomUUID?crypto.randomUUID().replace(/-/g,'').slice(0,16):Math.random().toString(36).slice(2,14));
 const KINDS=['income','expenses','savings','goals','allocs','transfers','bills'];
 const defaultWallets=(startCash=0)=>[{id:'w_cash',name:'Cash',type:'cash',start:+startCash||0},{id:'w_gcash',name:'GCash',type:'ewallet',start:0},{id:'w_maya',name:'Maya',type:'ewallet',start:0},{id:'w_bank',name:'Bank',type:'bank',start:0},{id:'w_cc',name:'Credit Card',type:'credit',start:0}];
 const EMPTY=()=>{const d=new Date();return {
-  settings:{startDate:`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-01`,startCash:0,startOther:0,startGoal:0,sal15:0,sal30:0},
+  settings:{startDate:`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-01`,startCash:0,startOther:0,startGoal:0,sal15:0,sal30:0,lastBackup:'',lastBackupWhere:'',backupTo:'file',backupRemind:true,driveFolder:''},
   lists:{
     expense:['Rent','Food','Commute','Grocery','Online Shopping','Online Payment','Gift','Electric','Water','Internet','Others'],
     income:['Salary','13th Month Pay','Bonus','Side Gig','Other Income'],
     savings:['Emergency Fund','General Savings','Investment','Travel / Major Purchase','Goal','Others']
   },
   budget:{},wallets:defaultWallets(0),income:[],expenses:[],savings:[],goals:[],allocs:[],transfers:[],bills:[]};};
-let S=EMPTY(), userName='';
+let S=EMPTY(), userName='', userEmail='';
 const LS={get:(k,d)=>{try{const v=localStorage.getItem(k);return v===null?d:v;}catch(_){return d;}},set:(k,v)=>{try{localStorage.setItem(k,v);}catch(_){}}};
 let loaded=new Set(), ready=false, readyTimer=null;
 function markLoaded(k){if(ready) return; loaded.add(k); if(loaded.size>=KINDS.length+1) setReady();}
@@ -663,7 +705,7 @@ window.onMeta=m=>{const d=EMPTY();S.settings={...d.settings,...(m&&m.settings||{
   S.wallets=(m&&Array.isArray(m.wallets)&&m.wallets.length)?m.wallets:defaultWallets(m&&m.settings&&m.settings.startCash);markLoaded('meta');schedule();};
 window.setSync=st=>{const el=$('syncBadge');if(!el)return;el.className='sync '+st;el.innerHTML='<i></i>'+({synced:'Synced',saving:'Saving…',offline:'Offline – will sync'}[st]);};
 window.onSignedIn=u=>{$('auth').classList.add('hide');
-  userName=((u.displayName||'').trim().split(/\s+/)[0])||'';
+  userName=((u.displayName||'').trim().split(/\s+/)[0])||'';userEmail=u.email||'';
   loaded=new Set();ready=false;document.body.classList.add('loading');clearTimeout(readyTimer);readyTimer=setTimeout(setReady,8000);
   const av=u.photoURL?`<img src="${esc(u.photoURL)}" alt="" referrerpolicy="no-referrer">`:esc((u.displayName||u.email||'?')[0].toUpperCase());
   $('topRight').innerHTML=`<div class="syncrow"><span class="sync offline" id="syncBadge"><i></i>Connecting…</span><div class="avatar" title="${esc(u.email||'')}">${av}</div></div>`;
@@ -936,6 +978,7 @@ function renderDash(){
     if(bd>0&&sp>bd) al.push(`<div class="alert bad"><span><b>${esc(c)}</b> is over budget by ${fmt(sp-bd)} this month.</span></div>`);
     else if(bd>0&&sp>=bd*0.8) al.push(`<div class="alert warn"><span><b>${esc(c)}</b> has used ${pct(sp/bd)} of its budget.</span></div>`);});
   if(goalFundsAlloc>now.goalFunds+0.005) al.push(`<div class="alert bad"><span>Goal allocations (${fmt(goalFundsAlloc)}) exceed available goal funds (${fmt(now.goalFunds)}).</span></div>`);
+  const bd=backupDue(); if(bd) al.push(`<div class="alert warn"><span>${bd.days==null?"You haven't made a backup yet.":`Your last backup was ${bd.days} days ago.`} A monthly backup keeps a safe copy outside the app.</span><button class="btn sm abtn" data-backup>Back up now</button></div>`);
   const pend=S.income.filter(r=>!r.date).length; if(pend) al.push(`<div class="alert warn"><span>${pend} income record${pend>1?'s':''} pending (no date received).</span></div>`);
   $('alerts').innerHTML=al.join('');
   renderChecklist(); renderUpcoming(ub); renderHeat(month);
@@ -1096,6 +1139,8 @@ function renderSettings(){
   const L={expense:'Expense categories',income:'Income types',savings:'Savings accounts'};
   $('listsEdit').innerHTML=Object.entries(L).map(([k,l])=>`<div style="margin-bottom:14px"><h3>${l}</h3><div class="chips">${S.lists[k].map((x,i)=>`<span class="chip">${esc(x)}${(k==='savings'&&x==='Goal')||(k==='income'&&x==='Salary')?'':`<button data-rmlist="${k}" data-i="${i}" title="Remove" aria-label="Remove ${esc(x)}">×</button>`}</span>`).join('')}</div>
     <form data-addlist="${k}" style="display:flex;gap:6px"><input name="v" placeholder="Add new…" required><button class="btn sec sm" type="submit">Add</button></form></div>`).join('')+'<div class="note">“Salary” and “Goal” are required for salary tracking and goal funds, so they can\'t be removed.</div>';
+  renderBackupInfo(); renderAppInfo();
+  $('secInfo').innerHTML=(FH_CONFIG.recaptchaSiteKey?'<span class="pill good">App Check on</span> ':'')+'Access is limited to your Google account. This site is protected by reCAPTCHA and the Google <a href="https://policies.google.com/privacy" target="_blank" rel="noopener">Privacy Policy</a> and <a href="https://policies.google.com/terms" target="_blank" rel="noopener">Terms of Service</a> apply.';
   const pref=document.documentElement.dataset.pref||'auto';document.querySelectorAll('#themeSeg button').forEach(x=>x.classList.toggle('on',x.dataset.themeSet===pref));
 }
 
@@ -1356,7 +1401,7 @@ try{matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>{if
 
 /* ================= DATA TOOLS ================= */
 function download(name,text,type){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type}));a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);}
-$('btnExport').onclick=()=>download(`finance-hub-backup-${today()}.json`,JSON.stringify(S,null,2),'application/json');
+$('btnExport').onclick=downloadBackup;
 $('btnCsv').onclick=()=>{
   const q=v=>`"${String(v??'').replace(/"/g,'""')}"`, rows=[['Kind','Date','Type/Category','Amount','Paid From / Action','Account','Wallet','Description/Note']];
   S.income.forEach(r=>rows.push(['Income',r.date,r.type,r.amount,'','',wName(wOf(r)),r.desc]));
@@ -1382,6 +1427,95 @@ $('btnClear').onclick=async()=>{if(!cloudOK())return;
 $('btnSignOut').onclick=async()=>{if(await askConfirm({title:'Sign out?',msg:'You\'ll need to sign in with Google again on this device.',ok:'Sign out'})) FB.signOut();};
 $('authBtn').onclick=()=>{$('authErr').textContent='';window.FB&&FB.signIn();};
 
+function loadScript(src,test){return new Promise((res,rej)=>{if(test()) return res();const el=document.createElement('script');el.src=src;el.async=true;el.onload=()=>res();el.onerror=()=>rej(new Error('Could not load '+src.split('/')[2]+'. Check your internet connection.'));document.head.appendChild(el);});}
+/* ================= BACKUPS ================= */
+const driveReady=()=>!!(window.FH_CONFIG&&FH_CONFIG.googleClientId);
+const daysSince=d=>d?Math.round((P(today())-P(d))/864e5):null;
+function backupDue(){if(!ready||S.settings.backupRemind===false) return null;
+  if(!(S.expenses.length+S.income.length+S.savings.length)) return null;
+  const n=daysSince(S.settings.lastBackup); return (n===null||n>=30)?{days:n}:null;}
+function backupData(){const {settings,lists,budget,wallets}=S,o={version:APP_VERSION,exportedAt:new Date().toISOString(),settings,lists,budget,wallets};KINDS.forEach(k=>o[k]=S[k]);return o;}
+function markBackup(where){S.settings.lastBackup=today();S.settings.lastBackupWhere=where;cMeta();render();}
+function downloadBackup(){download(`finance-hub-backup-${today()}.json`,JSON.stringify(backupData(),null,2),'application/json');markBackup('file');toast('Backup downloaded');buzz();}
+let gTok=null,gExp=0;
+function driveToken(){
+  if(gTok&&Date.now()<gExp-60000) return Promise.resolve(gTok);
+  return loadScript('https://accounts.google.com/gsi/client',()=>!!(window.google&&google.accounts&&google.accounts.oauth2)).then(()=>new Promise((res,rej)=>{
+    const c=google.accounts.oauth2.initTokenClient({client_id:FH_CONFIG.googleClientId,scope:'https://www.googleapis.com/auth/drive.file',hint:userEmail,
+      callback:r=>{if(r.error) rej(new Error(r.error_description||r.error)); else {gTok=r.access_token;gExp=Date.now()+(+r.expires_in||3600)*1000;res(gTok);}},
+      error_callback:e=>rej(new Error(e&&e.type==='popup_closed'?'The Google window was closed before finishing.':(e&&(e.message||e.type))||'Google sign-in failed.'))});
+    c.requestAccessToken({prompt:''});}));
+}
+async function driveFetch(url,opt,tok){const r=await fetch(url,{...opt,headers:{Authorization:'Bearer '+tok,...(opt&&opt.headers||{})}});
+  if(r.status===401){gTok=null;throw new Error('Google access expired. Tap Back up now again.');}
+  if(!r.ok){let m='';try{m=(await r.json()).error.message;}catch(_){} throw new Error(`Google Drive error ${r.status}${m?': '+m:''}`);} return r.json();}
+async function driveFolder(tok){
+  const id=S.settings.driveFolder;
+  if(id){try{const f=await driveFetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(id)}?fields=id,trashed`,{},tok);if(!f.trashed) return id;}catch(e){if(/expired/.test(e.message)) throw e;}}
+  const f=await driveFetch('https://www.googleapis.com/drive/v3/files?fields=id',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:'Finance Hub Backups',mimeType:'application/vnd.google-apps.folder'})},tok);
+  S.settings.driveFolder=f.id; return f.id;
+}
+async function backupToDrive(){
+  const tok=await driveToken(), folder=await driveFolder(tok), name=`finance-hub-backup-${today()}.json`, bnd='fh'+uid();
+  const body=`--${bnd}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify({name,parents:[folder],mimeType:'application/json'})}\r\n--${bnd}\r\nContent-Type: application/json\r\n\r\n${JSON.stringify(backupData())}\r\n--${bnd}--`;
+  await driveFetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name',{method:'POST',headers:{'Content-Type':'multipart/related; boundary='+bnd},body},tok);
+  markBackup('drive'); toast(`Saved to Google Drive › Finance Hub Backups`); buzz();
+}
+let backingUp=false;
+async function doBackup(){
+  if(backingUp) return; if(!cloudOK()) return;
+  if(S.settings.backupTo==='drive'&&driveReady()){backingUp=true;toast('Saving to Google Drive…');
+    try{await backupToDrive();}catch(err){console.error(err);
+      if(await askConfirm({title:"Couldn't save to Google Drive",msg:esc(err.message||String(err))+'<br><br>Download the backup to this device instead?',ok:'Download instead'})) downloadBackup();}
+    finally{backingUp=false;}}
+  else downloadBackup();
+}
+function renderBackupInfo(){
+  const st=S.settings,n=daysSince(st.lastBackup);
+  $('backupInfo').innerHTML=`<div class="kv"><span>Last backup</span><b>${st.lastBackup?`${nice(st.lastBackup)} · ${st.lastBackupWhere==='drive'?'Google Drive':'this device'}${n>0?` <span class="pill ${n>=30?'warn':''}">${n} day${n===1?'':'s'} ago</span>`:' <span class="pill good">today</span>'}`:'<span class="pill warn">Never</span>'}</b></div>`;
+  const to=st.backupTo==='drive'&&driveReady()?'drive':'file';
+  document.querySelectorAll('#bkSeg button').forEach(b=>{b.classList.toggle('on',b.dataset.bkto===to);if(b.dataset.bkto==='drive') b.disabled=!driveReady();});
+  $('driveNote').innerHTML=driveReady()?(to==='drive'?'Backups go to a <b>Finance Hub Backups</b> folder in your Google Drive. The app can only see files it created there.':'Tip: choose Google Drive so backups are stored off this device.'):'Google Drive backups need a one-time setup (see the Phase 3 guide). Until then, backups download to this device.';
+  $('bkRemind').checked=st.backupRemind!==false;
+}
+document.addEventListener('click',e=>{const b=e.target.closest('[data-backup]');if(b){doBackup();return;}
+  const t=e.target.closest('[data-bkto]');if(t&&!t.disabled){S.settings.backupTo=t.dataset.bkto;cMeta();render();}});
+$('bkRemind').addEventListener('change',e=>{S.settings.backupRemind=e.target.checked;cMeta();render();});
+
+/* ================= INSTALLABLE APP / UPDATES ================= */
+const isStandalone=()=>matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;
+if(isStandalone()) document.documentElement.classList.add('standalone');
+let installEvt=null;
+addEventListener('beforeinstallprompt',e=>{e.preventDefault();installEvt=e;render();});
+addEventListener('appinstalled',()=>{installEvt=null;toast('Finance Hub installed');render();});
+function renderAppInfo(){
+  const ios=/iphone|ipad|ipod/i.test(navigator.userAgent);
+  const inst=isStandalone()?'<span class="pill good">Installed</span>':installEvt?'<button class="btn sm" id="btnInstall">Install app</button>':ios?'<span style="font-weight:600">Share › Add to Home Screen</span>':'<span style="font-weight:600">Browser menu › Install app</span>';
+  const sw='serviceWorker' in navigator&&navigator.serviceWorker.controller;
+  $('appInfo').innerHTML=`<div class="kv"><span>Version</span><b>${APP_VERSION}</b></div><div class="kv"><span>Install on this device</span><b>${inst}</b></div><div class="kv"><span>Offline mode</span><b>${sw?'<span class="pill good">Ready</span>':'<span class="pill">Available after first load on the website</span>'}</b></div><div style="margin-top:10px"><button class="btn ghost sm" id="btnCheckUpd">Check for updates</button></div>`;
+  const ib=$('btnInstall'); if(ib) ib.onclick=async()=>{installEvt.prompt();const c=await installEvt.userChoice.catch(()=>null);installEvt=null;render();if(c&&c.outcome==='accepted') buzz();};
+  $('btnCheckUpd').onclick=()=>{checkUpdate(true);};
+}
+function showUpdate(){$('updBar').classList.add('show');}
+$('updBtn').onclick=()=>{$('updTxt').textContent='Updating…';location.reload();};
+$('updX').onclick=()=>$('updBar').classList.remove('show');
+let manualCheck=false;
+function checkUpdate(manual){
+  if(!('serviceWorker' in navigator)||!navigator.serviceWorker.controller){if(manual) toast('Updates are checked automatically on the website.');return;}
+  manualCheck=!!manual; navigator.serviceWorker.controller.postMessage('CHECK_UPDATE');
+  if(manual){toast('Checking for updates…');setTimeout(()=>{if(manualCheck&&!$('updBar').classList.contains('show')) toast('You have the latest version');manualCheck=false;},4000);}
+}
+async function staleCheck(){try{const m=await caches.open('fh-meta'),r=await m.match('./__updated');if(r&&+(await r.text())>performance.timeOrigin) showUpdate();}catch(_){}}
+if('serviceWorker' in navigator&&location.protocol==='https:'){
+  navigator.serviceWorker.register('./sw.js').then(reg=>{
+    staleCheck();
+    setInterval(()=>{reg.update().catch(()=>{});checkUpdate(false);},30*60*1000);
+    document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'){reg.update().catch(()=>{});checkUpdate(false);}});
+  }).catch(err=>console.warn('Service worker not registered',err));
+  navigator.serviceWorker.addEventListener('message',e=>{if(e.data&&e.data.type==='UPDATE_READY'){manualCheck=false;showUpdate();}});
+}
+if(new URLSearchParams(location.search).get('add')==='expense'){history.replaceState(null,'',location.pathname);const t=setInterval(()=>{if(ready){clearInterval(t);openQA();}},300);setTimeout(()=>clearInterval(t),15000);}
+
 /* ================= INIT ================= */
 chartTheme();
 let _rz,_wasNarrow=innerWidth<760;
@@ -1391,6 +1525,7 @@ render();
 
 <script type="module">
 import {initializeApp} from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
+import {initializeAppCheck,ReCaptchaV3Provider} from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app-check.js';
 import {getAuth,GoogleAuthProvider,signInWithPopup,signInWithRedirect,getRedirectResult,onAuthStateChanged,signOut} from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import {initializeFirestore,getFirestore,persistentLocalCache,persistentMultipleTabManager,doc,setDoc,deleteDoc,collection,onSnapshot,writeBatch} from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
@@ -1404,6 +1539,9 @@ const firebaseConfig = {
 };
 
 const app=initializeApp(firebaseConfig);
+// App Check: proves requests come from this site (enabled once a reCAPTCHA site key is set in FH_CONFIG)
+const SITE_KEY=(window.FH_CONFIG||{}).recaptchaSiteKey;
+if(SITE_KEY){try{initializeAppCheck(app,{provider:new ReCaptchaV3Provider(SITE_KEY),isTokenAutoRefreshEnabled:true});}catch(e){console.warn('App Check could not start',e);}}
 const auth=getAuth(app);
 let db;
 try{db=initializeFirestore(app,{localCache:persistentLocalCache({tabManager:persistentMultipleTabManager()})});}
