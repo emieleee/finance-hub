@@ -319,6 +319,27 @@ details.sec>summary:hover{color:var(--ink)}
  #mnav .nbadge{top:4px;right:calc(50% - 22px);transform:none}
 }
 @media(max-width:380px){.kpis,.hero-side .kpis{grid-template-columns:1fr}.sheet form.entry{grid-template-columns:1fr}.qa-row{grid-template-columns:1fr}}
+/* hero card v2 */
+.hero-main{display:flex;flex-direction:column;background:radial-gradient(120% 140% at 100% 0%,rgba(16,185,129,.32) 0%,rgba(16,185,129,0) 55%),linear-gradient(135deg,#0F1E3D 0%,#16295A 100%)}
+.hero-main::after{right:-60px;bottom:-80px;width:220px;height:220px;border-width:28px;border-color:rgba(255,255,255,.04)}
+.hm-top,.hm-status,.hm-stats{position:relative;z-index:1}
+.hm-status{display:flex;align-items:center;gap:12px;margin-top:18px;padding:12px 14px;border-radius:14px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.09)}
+.hm-status .si{width:36px;height:36px;border-radius:11px;display:grid;place-items:center;flex:none;background:rgba(16,185,129,.2);color:#6EE7B7}
+.hm-status .si svg{width:18px;height:18px}
+.hm-status.short{border-left:3px solid #F59E0B}
+.hm-status.short .si{background:rgba(245,158,11,.18);color:#FCD34D}
+.hm-status .st{flex:1;min-width:0;font-size:12px;color:#B8C4D6;line-height:1.45}
+.hm-status .st b{display:block;font-size:17px;color:#fff;font-weight:800;letter-spacing:-.01em;margin-bottom:1px}
+.hm-status .st b span{font-size:12px;font-weight:600;color:#B8C4D6}
+.hm-status.short .st b{color:#FDE68A}
+.sbtn{border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.08);color:#fff;font-weight:700;font-size:12px;border-radius:10px;padding:9px 12px;cursor:pointer;flex:none;min-height:38px}
+.sbtn:hover{background:rgba(255,255,255,.14)}
+.hm-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));margin-top:auto;padding-top:16px}
+.hm-stats div{padding:12px 14px 0;border-left:1px solid rgba(255,255,255,.1);min-width:0;border-top:1px solid rgba(255,255,255,.1)}
+.hm-stats div:first-child{border-left:0;padding-left:0}
+.hm-stats span{display:block;font-size:11px;color:#94A3B8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hm-stats b{display:block;color:#fff;font-size:15px;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@media(max-width:760px){.hm-stats div{padding:10px 8px 0}.hm-stats b{font-size:13px}.hm-status{flex-wrap:wrap}.hm-status .sbtn{width:100%}}
 </style>
 </head>
 <body class="loading">
@@ -892,10 +913,13 @@ function renderDash(){
   const ub=upcomingBills(), ubTotal=sum(ub.list,x=>+x.b.amount||0);
   const days=Math.max(1,Math.round((P(ub.np)-P(t))/864e5)), avail=now.cash-ubTotal;
   const nCash=S.wallets.filter(w=>!isCredit(w)).length;
-  $('heroMain').innerHTML=`<div class="l">Money in hand</div><div class="v">${fmt(now.cash)}</div><div class="s">Across ${nCash} wallet${nCash===1?'':'s'}${now.owed>0.005?' · excludes credit cards':''}</div>
-    ${avail>=0?`<div class="safe"><div>Safe to spend<b>${fmt(avail/days)}/day</b></div><div>for ${days} day${days===1?'':'s'} until payday (${short(P(ub.np))})${ubTotal?`<br>after ${fmt(ubTotal)} in bills`:''}</div></div>`
-      :`<div class="safe warnbox"><div>${ubTotal?'Bills before payday exceed your money in hand by':'Your wallet balances are below zero by'}<b>${fmt(-avail)}</b></div></div>`}
-    <div class="hero-split"><div>Net worth<b>${fmt(now.cash+now.totalSav-now.owed)}</b></div>${now.owed>0.005?`<div>Credit card owed<b>${fmt(now.owed)}</b></div>`:`<div>Total savings<b>${fmt(now.totalSav)}</b></div>`}<div>Bills before payday<b>${fmt(ubTotal)}</b></div></div>`;
+  const npL=short(P(ub.np)), dl=`${days} day${days===1?'':'s'}`;
+  const status=avail>=0
+    ?`<div class="hm-status ok"><span class="si">${svgI(IC.check,2.4)}</span><div class="st"><b>${fmt(avail/days)} <span>/ day</span></b>safe to spend for ${dl} until payday (${npL})${ubTotal?` · after ${fmt(ubTotal)} in bills`:''}</div></div>`
+    :`<div class="hm-status short"><span class="si">${svgI(IC.alert,2.2)}</span><div class="st"><b>${fmt(-avail)} <span>short</span></b>${ubTotal?`Bills due before payday (${npL}) add up to more than your money in hand.`:'Your wallet balances are below zero.'}</div>${ubTotal?'<button class="sbtn" data-goto="bills">View bills</button>':''}</div>`;
+  $('heroMain').innerHTML=`<div class="hm-top"><div class="l">Money in hand</div><div class="v">${fmt(now.cash)}</div><div class="s">Across ${nCash} wallet${nCash===1?'':'s'}${now.owed>0.005?' · excludes credit cards':''}</div></div>
+    ${status}
+    <div class="hm-stats"><div><span>Net worth</span><b>${fmt(now.cash+now.totalSav-now.owed)}</b></div>${now.owed>0.005?`<div><span>Card owed</span><b>${fmt(now.owed)}</b></div>`:`<div><span>Total savings</span><b>${fmt(now.totalSav)}</b></div>`}<div><span>Bills before payday</span><b>${fmt(ubTotal)}</b></div></div>`;
   // budget card
   const monthExp=S.expenses.filter(e=>inR(e.date,mA,mB));
   const budTotal=S.lists.expense.reduce((s,c)=>s+(+S.budget[c]||0),0), spentM=sum(monthExp), used=budTotal?spentM/budTotal:0, left=budTotal-spentM;
