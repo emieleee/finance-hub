@@ -182,7 +182,8 @@ input:focus,select:focus{outline:0;border-color:var(--em);box-shadow:0 0 0 4px r
 .acct div{flex:1;min-width:0;font-size:13px}.acct b{display:block;overflow:hidden;text-overflow:ellipsis}
 /* ---- mobile overflow fixes ---- */
 .toolbar select{width:auto}
-html,body{max-width:100%;overflow-x:hidden}
+html,body{max-width:100%;overflow-x:clip}
+@media(min-width:761px){aside{position:sticky;top:0;height:100vh;height:100dvh;align-self:start;overflow-y:auto}}
 input,select{width:100%;min-width:0;max-width:100%}
 input[type=date]{-webkit-appearance:none;appearance:none;min-height:44px;display:block}
 input[type=date]::-webkit-date-and-time-value{text-align:left}
