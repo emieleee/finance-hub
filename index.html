@@ -673,7 +673,7 @@ html.standalone .topbar{padding-top:env(safe-area-inset-top)}
    Leave a value empty to keep that feature switched off. */
 window.FH_CONFIG={
   googleClientId:'',      // Google Drive backups – OAuth "Web client" ID, ends with .apps.googleusercontent.com
-  recaptchaSiteKey:''     // Firebase App Check – reCAPTCHA v3 site key
+  recaptchaSiteKey:'6Ld1-BEuAAAAACuATBAA7uQ3VEFwfGpW4tVvIsUx'     // Firebase App Check – reCAPTCHA Enterprise (Fraud Defense) Web key ID
 };
 const APP_VERSION='3.0';
 /* ================= STATE ================= */
@@ -1525,7 +1525,7 @@ render();
 
 <script type="module">
 import {initializeApp} from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
-import {initializeAppCheck,ReCaptchaV3Provider} from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app-check.js';
+import {initializeAppCheck,ReCaptchaEnterpriseProvider} from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app-check.js';
 import {getAuth,GoogleAuthProvider,signInWithPopup,signInWithRedirect,getRedirectResult,onAuthStateChanged,signOut} from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import {initializeFirestore,getFirestore,persistentLocalCache,persistentMultipleTabManager,doc,setDoc,deleteDoc,collection,onSnapshot,writeBatch} from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
@@ -1539,9 +1539,9 @@ const firebaseConfig = {
 };
 
 const app=initializeApp(firebaseConfig);
-// App Check: proves requests come from this site (enabled once a reCAPTCHA site key is set in FH_CONFIG)
+// App Check: proves requests come from this site (reCAPTCHA Enterprise; enabled once a key is set in FH_CONFIG)
 const SITE_KEY=(window.FH_CONFIG||{}).recaptchaSiteKey;
-if(SITE_KEY){try{initializeAppCheck(app,{provider:new ReCaptchaV3Provider(SITE_KEY),isTokenAutoRefreshEnabled:true});}catch(e){console.warn('App Check could not start',e);}}
+if(SITE_KEY){try{initializeAppCheck(app,{provider:new ReCaptchaEnterpriseProvider(SITE_KEY),isTokenAutoRefreshEnabled:true});}catch(e){console.warn('App Check could not start',e);}}
 const auth=getAuth(app);
 let db;
 try{db=initializeFirestore(app,{localCache:persistentLocalCache({tabManager:persistentMultipleTabManager()})});}
