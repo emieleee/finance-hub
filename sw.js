@@ -1,15 +1,17 @@
 /* Finance Hub service worker
    - Opens instantly and works offline (app shell is cached).
-   - Checks for a newer index.html in the background; when it changes,
+   - Checks for newer app files (index.html, styles.css, app.js, firebase.js) in the background; when any changes,
      the page shows "New version available – tap to refresh".
    - Caches the Firebase and Chart.js libraries so offline cold starts work.
    Your financial data is NOT cached here – Firebase keeps its own offline copy. */
-const SHELL_CACHE = 'fh-shell-v1';
+const SHELL_CACHE = 'fh-shell-v2';
 const LIB_CACHE = 'fh-libs-v1';
 const META_CACHE = 'fh-meta';
-const SHELL = ['./', './index.html', './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png', './icons/icon-maskable-512.png', './icons/apple-touch-icon.png', './icons/favicon-32.png'];
+const SHELL = ['./', './index.html', './styles.css', './app.js', './firebase.js', './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png', './icons/icon-maskable-512.png', './icons/apple-touch-icon.png', './icons/favicon-32.png'];
 const LIB_HOSTS = ['cdn.jsdelivr.net', 'www.gstatic.com'];
 const PAGE_KEY = new URL('./index.html', self.registration.scope).href;
+// App code files checked for updates (any change shows the update banner).
+const CODE_FILES = ['./index.html', './styles.css', './app.js', './firebase.js'].map(p => new URL(p, self.registration.scope).href);
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(SHELL_CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
@@ -21,24 +23,33 @@ self.addEventListener('activate', e => {
   })());
 });
 
-// Fetch the latest index.html; if it differs from the cached one, store it and tell open pages.
-async function revalidatePage() {
-  try {
-    const res = await fetch(PAGE_KEY, { cache: 'no-cache' });
-    if (!res.ok) return;
-    const cache = await caches.open(SHELL_CACHE);
-    const old = await cache.match(PAGE_KEY);
-    const fresh = await res.clone().text();
-    const prev = old ? await old.text() : null;
-    if (prev !== fresh) {
-      await cache.put(PAGE_KEY, res);
-      if (prev !== null) {
+// Fetch the latest app code files; if any differ from the cached copies, store them and tell open pages.
+// All files are fetched first and only then written, so the cache never mixes old and new versions.
+let checking = null;
+function revalidatePage() {
+  if (!checking) checking = (async () => {
+    try {
+      const cache = await caches.open(SHELL_CACHE);
+      const fresh = await Promise.all(CODE_FILES.map(async url => {
+        const res = await fetch(url, { cache: 'no-cache' });
+        if (!res.ok) throw new Error('fetch failed');
+        const old = await cache.match(url);
+        const text = await res.clone().text();
+        const prev = old ? await old.text() : null;
+        return { url, res, changed: prev !== text, existed: prev !== null };
+      }));
+      const changed = fresh.filter(f => f.changed);
+      if (!changed.length) return;
+      for (const f of changed) await cache.put(f.url, f.res);
+      if (changed.some(f => f.existed)) {
         const meta = await caches.open(META_CACHE);
         await meta.put('./__updated', new Response(String(Date.now())));
         for (const c of await self.clients.matchAll({ type: 'window' })) c.postMessage({ type: 'UPDATE_READY' });
       }
-    }
-  } catch (_) { /* offline – keep the cached version */ }
+    } catch (_) { /* offline or a file failed – keep the cached version */ }
+    finally { checking = null; }
+  })();
+  return checking;
 }
 
 self.addEventListener('message', e => {
