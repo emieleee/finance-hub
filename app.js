@@ -20,6 +20,7 @@ const EMPTY=()=>{const d=new Date();return {
   },
   budget:{},wallets:defaultWallets(0),income:[],expenses:[],savings:[],goals:[],allocs:[],transfers:[],bills:[],adjustments:[]};};
 let S=EMPTY(), userName='', userEmail='';
+let adjustmentsAvailable=true;
 const LS={get:(k,d)=>{try{const v=localStorage.getItem(k);return v===null?d:v;}catch(_){return d;}},set:(k,v)=>{try{localStorage.setItem(k,v);}catch(_){}}};
 let loaded=new Set(), ready=false, readyTimer=null;
 function markLoaded(k){if(ready) return; loaded.add(k); if(loaded.size>=KINDS.length+1) setReady();}
@@ -31,10 +32,11 @@ function cMeta(){if(!cloudOK())return;FB.putMeta(JSON.parse(JSON.stringify({sett
 /* ---- cloud read hooks ---- */
 let _rq=0;function schedule(){if(_rq)return;_rq=requestAnimationFrame(()=>{_rq=0;render();});}
 window.onData=(k,rows)=>{S[k]=rows;markLoaded(k);schedule();};
+window.onAdjustmentPermissionDenied=()=>{adjustmentsAvailable=false;schedule();toast('Wallet reconciliation is unavailable until the updated Firestore rules are published.');};
 window.onMeta=m=>{const d=EMPTY();S.settings={...d.settings,...(m&&m.settings||{})};S.lists=(m&&m.lists)||d.lists;S.budget=(m&&m.budget)||{};
   S.wallets=(m&&Array.isArray(m.wallets)&&m.wallets.length)?m.wallets:defaultWallets(m&&m.settings&&m.settings.startCash);markLoaded('meta');schedule();};
 window.setSync=st=>{const el=$('syncBadge');if(!el)return;el.className='sync '+st;el.innerHTML='<i></i>'+({synced:'Synced',saving:'Saving…',offline:'Offline – will sync'}[st]);};
-window.onSignedIn=u=>{$('auth').classList.add('hide');
+window.onSignedIn=u=>{adjustmentsAvailable=true;$('auth').classList.add('hide');
   userName=((u.displayName||'').trim().split(/\s+/)[0])||'';userEmail=u.email||'';
   loaded=new Set();ready=false;document.body.classList.add('loading');clearTimeout(readyTimer);readyTimer=setTimeout(setReady,8000);
   const av=u.photoURL?`<img src="${esc(u.photoURL)}" alt="" referrerpolicy="no-referrer">`:esc((u.displayName||u.email||'?')[0].toUpperCase());
@@ -440,11 +442,12 @@ function renderBills(){
 function renderWallets(){
   const b=balances(), t=today(), mA=t.slice(0,8)+'01';
   $('kpiW').innerHTML=kpi('Money in hand',fmt(b.cash),'All non-credit wallets','','wallet','em')+kpi('Credit card owed',fmt(Math.max(b.owed,0)),'',b.owed>0.005?'neg':'','down','red')+kpi('Cash minus debt',fmt(b.cash-b.owed),'','','flow','navy');
+  $('walletWarning').innerHTML=adjustmentsAvailable?'':`<div class="alert warn">Wallet reconciliation is unavailable because Firestore rules do not yet allow the adjustments collection. Publish the updated <b>firestore.rules</b> in Firebase Console to enable it.</div>`;
   $('wCards').innerHTML=S.wallets.map(w=>{const v=walletBal(w),f=wFlows(w,mA,t);
     return `<div class="wcard" data-wcard="${w.id}" style="--c:${wColor(w.id)}"><div class="top">${wIcon(w.id)}<div style="min-width:0"><b>${esc(w.name)}</b><span>${WTYPE[w.type]||''}</span></div></div>
       <div class="bal ${v<0?'neg':''}">${isCredit(w)?(v<0?fmt(-v)+' owed':fmt(v)):fmt(v)}</div>
       <div class="flows"><span>▲ In ${fmt(f.in)}</span><span>▼ Out ${fmt(f.out)}</span><span>Adjustment ${f.adjustment>=0?'+':''}${fmt(f.adjustment)}</span><span>this month</span></div>
-      <button class="btn sec sm" type="button" data-reconcile="${esc(w.id)}">Reconcile</button></div>`;}).join('');
+      ${adjustmentsAvailable?`<button class="btn sec sm" type="button" data-reconcile="${esc(w.id)}">Reconcile</button>`:''}</div>`;}).join('');
   const it=buildItems(['transfers']);
   $('trfList').innerHTML=it.length?groupsHtml(it,8):emptyState('swap','No transfers yet','Move money between wallets, like a GCash cash-in or a card payment.','<button class="btn sec sm" data-new="transfers">New transfer</button>');
 }
@@ -636,6 +639,7 @@ $('wForm').addEventListener('submit',e=>{e.preventDefault();const f=e.target,o={
   else S.wallets.push({id:'w_'+uid().slice(0,10),...o});
   const was=wEditId; cMeta(); closeSheet(); render(); toast(was?'Wallet updated':'Wallet added'); buzz();});
 function openReconcile(w,rec){
+  if(!adjustmentsAvailable){toast('Publish the updated Firestore rules before reconciling wallets');return;}
   if(!w){toast('This wallet is no longer available');return;}
   const f=$('recForm');f.reset();f.dataset.wallet=w.id;f.dataset.id=rec?rec.id:'';
   $('recActualLbl').firstChild.textContent=isCredit(w)?'Actual amount owed (PHP)':'Actual balance (PHP)';

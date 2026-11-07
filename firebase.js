@@ -22,7 +22,7 @@ try{db=initializeFirestore(app,{localCache:persistentLocalCache({tabManager:pers
 catch(e){console.warn('Offline cache unavailable, using memory only',e);db=getFirestore(app);}
 
 const KINDS=['income','expenses','savings','goals','allocs','transfers','bills','adjustments'];
-let uid=null,unsubs=[],pending={},denied=false;
+let uid=null,unsubs=[],pending={},denied=false,adjustmentsDenied=false;
 const fail=e=>{console.error(e);window.toast('Sync error: '+(e.code||e.message));};
 const ref=(k,id)=>k==='meta'?doc(db,'users',uid,'meta','state'):doc(db,'users',uid,k,id);
 function updSync(){window.setSync(!navigator.onLine?'offline':Object.values(pending).some(Boolean)?'saving':'synced');}
@@ -44,12 +44,17 @@ getRedirectResult(auth).catch(e=>window.showAuthError(e));
 onAuthStateChanged(auth,user=>{
   unsubs.forEach(u=>u());unsubs=[];pending={};
   if(!user){uid=null;window.onSignedOut();return;}
-  uid=user.uid;denied=false;window.onSignedIn(user);
-  const lfail=e=>{if(e.code==='permission-denied'){if(denied) return;denied=true;
+  uid=user.uid;denied=false;adjustmentsDenied=false;window.onSignedIn(user);
+  const lfail=(e,kind)=>{if(e.code==='permission-denied'&&kind==='adjustments'){
+      if(adjustmentsDenied) return;adjustmentsDenied=true;
+      console.warn('Wallet reconciliation is unavailable because Firestore rules do not allow the adjustments collection.');
+      window.onData('adjustments',[]);
+      window.onAdjustmentPermissionDenied();
+    }else if(e.code==='permission-denied'){if(denied) return;denied=true;
       window.showAuthError({message:`${user.email} doesn't have access to this Finance Hub. Sign in with the owner's Google account.`});signOut(auth);}
     else fail(e);};
   KINDS.forEach(k=>unsubs.push(onSnapshot(collection(db,'users',uid,k),{includeMetadataChanges:true},snap=>{
-    pending[k]=snap.metadata.hasPendingWrites;window.onData(k,snap.docs.map(d=>({id:d.id,...d.data()})));updSync();},lfail)));
+    pending[k]=snap.metadata.hasPendingWrites;window.onData(k,snap.docs.map(d=>({id:d.id,...d.data()})));updSync();},e=>lfail(e,k))));
   unsubs.push(onSnapshot(ref('meta'),{includeMetadataChanges:true},snap=>{
-    pending.meta=snap.metadata.hasPendingWrites;window.onMeta(snap.exists()?snap.data():null);updSync();},lfail));
+    pending.meta=snap.metadata.hasPendingWrites;window.onMeta(snap.exists()?snap.data():null);updSync();},e=>lfail(e,'meta')));
 });
