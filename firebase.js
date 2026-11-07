@@ -21,7 +21,7 @@ let db;
 try{db=initializeFirestore(app,{localCache:persistentLocalCache({tabManager:persistentMultipleTabManager()})});}
 catch(e){console.warn('Offline cache unavailable, using memory only',e);db=getFirestore(app);}
 
-const KINDS=['income','expenses','savings','goals','allocs','transfers','bills'];
+const KINDS=['income','expenses','savings','goals','allocs','transfers','bills','adjustments'];
 let uid=null,unsubs=[],pending={},denied=false;
 const fail=e=>{console.error(e);window.toast('Sync error: '+(e.code||e.message));};
 const ref=(k,id)=>k==='meta'?doc(db,'users',uid,'meta','state'):doc(db,'users',uid,k,id);
