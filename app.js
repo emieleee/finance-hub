@@ -5,11 +5,11 @@ window.FH_CONFIG={
   googleClientId:'',      // Google Drive backups – OAuth "Web client" ID, ends with .apps.googleusercontent.com
   recaptchaSiteKey:'6Ld1-BEuAAAAACuATBAA7uQ3VEFwfGpW4tVvIsUx'     // Firebase App Check – reCAPTCHA Enterprise (Fraud Defense) Web key ID
 };
-const APP_VERSION='3.0';
+const APP_VERSION='3.1';
 /* ================= STATE ================= */
 const $=id=>document.getElementById(id);
 const uid=()=>(crypto.randomUUID?crypto.randomUUID().replace(/-/g,'').slice(0,16):Math.random().toString(36).slice(2,14));
-const KINDS=['income','expenses','savings','goals','allocs','transfers','bills'];
+const KINDS=['income','expenses','savings','goals','allocs','transfers','bills','adjustments'];
 const defaultWallets=(startCash=0)=>[{id:'w_cash',name:'Cash',type:'cash',start:+startCash||0},{id:'w_gcash',name:'GCash',type:'ewallet',start:0},{id:'w_maya',name:'Maya',type:'ewallet',start:0},{id:'w_bank',name:'Bank',type:'bank',start:0},{id:'w_cc',name:'Credit Card',type:'credit',start:0}];
 const EMPTY=()=>{const d=new Date();return {
   settings:{startDate:`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-01`,startCash:0,startOther:0,startGoal:0,sal15:0,sal30:0,lastBackup:'',lastBackupWhere:'',backupTo:'file',backupRemind:true,driveFolder:''},
@@ -18,7 +18,7 @@ const EMPTY=()=>{const d=new Date();return {
     income:['Salary','13th Month Pay','Bonus','Side Gig','Other Income'],
     savings:['Emergency Fund','General Savings','Investment','Travel / Major Purchase','Goal','Others']
   },
-  budget:{},wallets:defaultWallets(0),income:[],expenses:[],savings:[],goals:[],allocs:[],transfers:[],bills:[]};};
+  budget:{},wallets:defaultWallets(0),income:[],expenses:[],savings:[],goals:[],allocs:[],transfers:[],bills:[],adjustments:[]};};
 let S=EMPTY(), userName='', userEmail='';
 const LS={get:(k,d)=>{try{const v=localStorage.getItem(k);return v===null?d:v;}catch(_){return d;}},set:(k,v)=>{try{localStorage.setItem(k,v);}catch(_){}}};
 let loaded=new Set(), ready=false, readyTimer=null;
@@ -113,14 +113,15 @@ const isCredit=w=>!!w&&w.type==='credit';
 const defaultWallet=()=>{const w=S.wallets.find(w=>!isCredit(w))||S.wallets[0];return w?w.id:'';};
 const wById=id=>S.wallets.find(w=>w.id===id);
 const wOf=r=>(r&&r.wallet&&wById(r.wallet))?r.wallet:defaultWallet();
-function wFlows(w,a,b){const id=w.id;
+function wFlows(w,a,b,excludeAdjustmentId){const id=w.id;
   const inc=sum(S.income.filter(r=>wOf(r)===id&&inR(r.date,a,b)));
   const exp=sum(S.expenses.filter(e=>isCash(e)&&wOf(e)===id&&inR(e.date,a,b)));
   const dep=sum(S.savings.filter(r=>r.action==='Deposit'&&wOf(r)===id&&inR(r.date,a,b)));
   const wd=sum(S.savings.filter(r=>r.action==='Withdrawal'&&wOf(r)===id&&inR(r.date,a,b)));
   const tin=sum(S.transfers.filter(t=>t.to===id&&inR(t.date,a,b))), tout=sum(S.transfers.filter(t=>t.from===id&&inR(t.date,a,b)));
-  return {in:inc+wd+tin,out:exp+dep+tout};}
-function walletBal(w,end){const f=wFlows(w,S.settings.startDate,end||today());return (isCredit(w)?-(+w.start||0):(+w.start||0))+f.in-f.out;}
+  const adjustment=sum(S.adjustments.filter(r=>r.wallet===id&&r.id!==excludeAdjustmentId&&inR(r.date,a,b)),r=>r.delta);
+  return {in:inc+wd+tin,out:exp+dep+tout,adjustment};}
+function walletBal(w,end,excludeAdjustmentId){const f=wFlows(w,S.settings.startDate,end||today(),excludeAdjustmentId);return (isCredit(w)?-(+w.start||0):(+w.start||0))+f.in-f.out+f.adjustment;}
 const srcOf=r=>r.paidFrom==='Goal Funds'?'__goal':wOf(r);
 function srcToFields(src){return src==='__goal'?{paidFrom:'Goal Funds',wallet:''}:{paidFrom:'Cash Balance',wallet:src||defaultWallet()};}
 const WI={cash:'<rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 12h.01M18 12h.01"/>',ewallet:'<rect x="6" y="2" width="12" height="20" rx="2.5"/><path d="M11 18h2"/>',bank:'<path d="M3 10h18L12 4z"/><path d="M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 21h18"/>',credit:'<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20M6 15h4"/>',goal:'<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/>'};
@@ -179,7 +180,8 @@ function periodStats(a,b){
   const netSav=dep-wd, net=inc-cashExp-cardPay-netSav;
   const before=iso(new Date(P(a).getTime()-864e5));
   const opening=a<=s.startDate?sum(S.wallets.filter(w=>!isCredit(w)),w=>+w.start||0):balances(before).cash;
-  return {inc,exp,cashExp,creditExp,goalExpP,cardPay,dep,wd,netSav,net,rate:inc?netSav/inc:0,opening,closing:opening+net,savEnd:balances(b).totalSav};
+  const adjustment=sum(S.adjustments.filter(r=>!isCredit(wById(r.wallet))&&inR(r.date,a,b)),r=>r.delta);
+  return {inc,exp,cashExp,creditExp,goalExpP,cardPay,dep,wd,netSav,net,rate:inc?netSav/inc:0,opening,adjustment,closing:opening+net+adjustment,savEnd:balances(b).totalSav};
 }
 function goalStats(){
   return S.goals.map(g=>{
@@ -192,7 +194,7 @@ function goalStats(){
 }
 function monthsList(){
   const st=P(S.settings.startDate), out=[];
-  const dates=[...S.income,...S.expenses,...S.savings,...S.transfers].map(r=>r.date).filter(Boolean).sort();
+  const dates=[...S.income,...S.expenses,...S.savings,...S.transfers,...S.adjustments].map(r=>r.date).filter(Boolean).sort();
   const now=new Date(), last=dates.length?P(dates[dates.length-1]):now;
   const endM=Math.max(last.getFullYear()*12+last.getMonth(),now.getFullYear()*12+now.getMonth())+1;
   for(let k=st.getFullYear()*12+st.getMonth();k<=endM;k++) out.push(iso(new Date(Math.floor(k/12),k%12,1)));
@@ -262,8 +264,9 @@ function buildItems(kinds){const out=[];const has=k=>kinds.includes(k);
   if(has('transfers')) S.transfers.forEach(r=>out.push({kind:'transfers',r,date:r.date||'',title:`${wName(r.from)} → ${wName(r.to)}`,sub:[r.note||'Transfer'],amt:+r.amount||0,mv:true,icon:`<span class="cico" style="--c:#6366F1">${svgI(IC.swap)}</span>`}));
   if(has('savings')) S.savings.forEach(r=>out.push({kind:'savings',r,date:r.date||'',title:`${r.action==='Deposit'?'Saved to':'Withdrew from'} ${r.account}`,sub:[wName(wOf(r)),r.note].filter(Boolean),amt:r.action==='Deposit'?-(+r.amount||0):+r.amount||0,mv:true,icon:catIcon('savings',r.account)}));
   if(has('allocs')) S.allocs.forEach(r=>out.push({kind:'allocs',r,date:r.date||'',title:goalName(r.goal),sub:[r.note||'Allocation'],amt:+r.amount||0,mv:true,icon:catIcon('savings','Goal')}));
+  if(has('adjustments')) S.adjustments.forEach(r=>{const w=wById(r.wallet);out.push({kind:'adjustments',r,date:r.date||'',title:`Reconciled ${wName(r.wallet)}`,sub:[isCredit(w)?`Amount owed: ${fmt(r.actual)}`:`Balance: ${fmt(r.actual)}`,r.note].filter(Boolean),amt:+r.delta||0,icon:wIcon(r.wallet),tag:'<span class="pill">Reconciliation</span>'});});
   return out.sort((a,b)=>(!a.date?-1:!b.date?1:b.date.localeCompare(a.date)));}
-function rowHtml(it){const cls=it.mv?'mv':it.amt>0?'in':'';const sign=it.mv?'':it.amt>0?'+':'−';
+function rowHtml(it){const cls=it.mv?'mv':it.amt>0?'in':'';const sign=it.mv?'':it.amt>0?'+':it.amt<0?'−':'';
   return `<div class="trow" data-kind="${it.kind}" data-id="${it.r.id}"><div class="tmain">${it.icon}<div class="tt"><b>${esc(it.title)} ${it.tag||''}</b><small>${it.sub.map(esc).join(' · ')||'&nbsp;'}</small></div><div class="ta ${cls}">${sign}${fmt(Math.abs(it.amt))}</div></div></div>`;}
 function dayLabel(d){if(!d) return 'Pending';const t=today(),y=iso(new Date(Date.now()-864e5));if(d===t) return 'Today';if(d===y) return 'Yesterday';
   const D=P(d);return D.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',...(D.getFullYear()!==new Date().getFullYear()?{year:'numeric'}:{})});}
@@ -335,7 +338,7 @@ function renderDash(){
   const srow=(l,e,ac)=>`<tr><td>${l}</td><td class="n">${fmt(e)}</td><td class="n">${fmt(ac)}</td><td class="n ${ac-e<0?'neg':'pos'}">${fmt(ac-e)}</td></tr>`;
   $('salaryTbl').innerHTML=`<table><tr><th>Pay cycle</th><th class="n">Expected</th><th class="n">Actual</th><th class="n">Diff</th></tr>${srow('15th',e15,a15)}${srow('30th',e30,a30)}<tr class="total"><td>Total</td><td class="n">${fmt(e15+e30)}</td><td class="n">${fmt(a15+a30)}</td><td class="n">${fmt(a15+a30-e15-e30)}</td></tr></table>`;
   const cr=(l,v)=>`<tr><td>${l}</td><td class="n">${fmt(v)}</td></tr>`;
-  $('cashTbl').innerHTML=`<table>${cr('Opening cash',p.opening)}${cr('+ Income received',p.inc)}${cr('− Spent from wallets',p.cashExp)}${Math.abs(p.cardPay)>0.005?cr('− Credit card payments',p.cardPay):''}${cr('− Savings deposited',p.dep)}${cr('+ Savings withdrawn',p.wd)}<tr class="total"><td>Closing cash</td><td class="n">${fmt(p.closing)}</td></tr>${cr('Total savings at period end',p.savEnd)}</table>`;
+  $('cashTbl').innerHTML=`<table>${cr('Opening cash',p.opening)}${cr('+ Income received',p.inc)}${cr('− Spent from wallets',p.cashExp)}${Math.abs(p.cardPay)>0.005?cr('− Credit card payments',p.cardPay):''}${cr('− Savings deposited',p.dep)}${cr('+ Savings withdrawn',p.wd)}${p.adjustment?cr('± Wallet adjustments',p.adjustment):''}<tr class="total"><td>Closing cash</td><td class="n">${fmt(p.closing)}</td></tr>${cr('Total savings at period end',p.savEnd)}</table>`;
   // trend section
   const pInc=S.income.filter(r=>inR(r.date,a,b));
   $('incBreak').innerHTML=`<table><tr><th>Income type</th><th class="n">Amount</th><th class="n">Share</th></tr>${S.lists.income.map(tp=>{const v=sum(pInc.filter(r=>r.type===tp));return `<tr><td><span class="catcell">${catIcon('income',tp)}${esc(tp)}</span></td><td class="n">${fmt(v)}</td><td class="n">${pct(p.inc?v/p.inc:0)}</td></tr>`;}).join('')}<tr class="total"><td>Total</td><td class="n">${fmt(p.inc)}</td><td class="n">${p.inc?'100.0%':'0.0%'}</td></tr></table>`;
@@ -409,12 +412,12 @@ function renderChecklist(){const el=$('checklist');if(!ready||LS.get('fh.ckl',''
 let actFilter='all';
 function renderActivity(){
   const q=$('actQ').value.trim().toLowerCase(), mon=$('actMonth').value, qn=q.replace(/[₱,\s]/g,'');
-  let items=buildItems(actFilter==='all'?['expenses','income','transfers','savings']:[actFilter]);
+  let items=buildItems(actFilter==='all'?['expenses','income','transfers','savings','adjustments']:[actFilter]);
   if(mon!=='all') items=items.filter(it=>!it.date?it.kind==='income':it.date.slice(0,7)===mon.slice(0,7));
   if(q) items=items.filter(it=>(it.title+' '+it.sub.join(' ')).toLowerCase().includes(q)||(qn&&/^\d+(\.\d+)?$/.test(qn)&&String(Math.abs(it.amt)).startsWith(qn)));
   document.querySelectorAll('#actSeg button').forEach(x=>x.classList.toggle('on',x.dataset.af===actFilter));
-  const inn=sum(items.filter(i=>i.kind==='income'),i=>i.amt), out=sum(items.filter(i=>i.kind==='expenses'),i=>-i.amt);
-  $('actSum').innerHTML=items.length?`<span><b>${items.length}</b> entr${items.length===1?'y':'ies'}</span><span>In <b class="pos">${fmt(inn)}</b></span><span>Out <b>${fmt(out)}</b></span>`:'';
+  const inn=sum(items.filter(i=>i.kind==='income'),i=>i.amt), out=sum(items.filter(i=>i.kind==='expenses'),i=>-i.amt), adj=sum(items.filter(i=>i.kind==='adjustments'),i=>i.amt);
+  $('actSum').innerHTML=items.length?`<span><b>${items.length}</b> entr${items.length===1?'y':'ies'}</span><span>In <b class="pos">${fmt(inn)}</b></span><span>Out <b>${fmt(out)}</b></span>${adj?`<span>Adjustments <b>${fmt(adj)}</b></span>`:''}`:'';
   $('actList').innerHTML=items.length?groupsHtml(items):(q||mon!=='all'||actFilter!=='all')?emptyState('search','No matches','Try a different search, month or filter.','<button class="btn sec sm" data-act-reset>Clear filters</button>')
     :emptyState('list','No activity yet','Log your first expense or income to get started.','<button class="btn sm" data-new="expenses">+ Add expense</button>');
   $('actHint').textContent=items.length?(matchMedia('(pointer:coarse)').matches?'Tip: swipe a row right to edit, left to delete.':'Click any row to edit or delete it.'):'';
@@ -440,7 +443,8 @@ function renderWallets(){
   $('wCards').innerHTML=S.wallets.map(w=>{const v=walletBal(w),f=wFlows(w,mA,t);
     return `<div class="wcard" data-wcard="${w.id}" style="--c:${wColor(w.id)}"><div class="top">${wIcon(w.id)}<div style="min-width:0"><b>${esc(w.name)}</b><span>${WTYPE[w.type]||''}</span></div></div>
       <div class="bal ${v<0?'neg':''}">${isCredit(w)?(v<0?fmt(-v)+' owed':fmt(v)):fmt(v)}</div>
-      <div class="flows"><span>▲ In ${fmt(f.in)}</span><span>▼ Out ${fmt(f.out)}</span><span>this month</span></div></div>`;}).join('');
+      <div class="flows"><span>▲ In ${fmt(f.in)}</span><span>▼ Out ${fmt(f.out)}</span><span>Adjustment ${f.adjustment>=0?'+':''}${fmt(f.adjustment)}</span><span>this month</span></div>
+      <button class="btn sec sm" type="button" data-reconcile="${esc(w.id)}">Reconcile</button></div>`;}).join('');
   const it=buildItems(['transfers']);
   $('trfList').innerHTML=it.length?groupsHtml(it,8):emptyState('swap','No transfers yet','Move money between wallets, like a GCash cash-in or a card payment.','<button class="btn sec sm" data-new="transfers">New transfer</button>');
 }
@@ -599,12 +603,15 @@ Object.entries(FORMS).forEach(([kind,c])=>{
     closeSheet(); toast(cur?'Changes saved':`${cap(c.noun)} added`); buzz();
   });
 });
-function openEdit(kind,id){const rec=(S[kind]||[]).find(r=>r.id===id);if(rec&&FORMS[kind]) openForm(kind,rec);}
+function openEdit(kind,id){const rec=(S[kind]||[]).find(r=>r.id===id);if(!rec)return;
+  if(kind==='adjustments'){openReconcile(wById(rec.wallet),rec);return;}
+  if(FORMS[kind]) openForm(kind,rec);}
 function deleteRec(kind,id){
   const rec=(S[kind]||[]).find(r=>r.id===id); if(!rec||!cloudOK()) return;
   const gone=[{k:kind,r:rec}]; if(kind==='goals') S.allocs.filter(a=>a.goal===id).forEach(a=>gone.push({k:'allocs',r:a}));
   FB.bulk(gone.map(g=>({k:g.k,id:g.r.id,del:true}))); buzz();
-  toast(`${cap(FORMS[kind].noun)} deleted${gone.length>1?` (+${gone.length-1} allocation${gone.length>2?'s':''})`:''}`,{label:'Undo',fn:()=>{FB.bulk(gone.map(g=>{const {id,...d}=g.r;return {k:g.k,id,d:JSON.parse(JSON.stringify(d))};}));toast('Restored');}});
+  const noun=kind==='adjustments'?'reconciliation':FORMS[kind].noun;
+  toast(`${cap(noun)} deleted${gone.length>1?` (+${gone.length-1} allocation${gone.length>2?'s':''})`:''}`,{label:'Undo',fn:()=>{FB.bulk(gone.map(g=>{const {id,...d}=g.r;return {k:g.k,id,d:JSON.parse(JSON.stringify(d))};}));toast('Restored');}});
 }
 
 /* ---- wallets ---- */
@@ -612,7 +619,7 @@ let wEditId=null;
 const setWLbl=()=>{$('wStartLbl').firstChild.textContent=$('wForm').elements.type.value==='credit'?'Amount owed at start (PHP)':'Starting balance (PHP)';};
 $('wForm').elements.type.addEventListener('change',setWLbl);
 function walletUsed(id){const d=id===defaultWallet(),m=r=>r.wallet===id||(d&&!wById(r.wallet));
-  return S.income.some(m)||S.expenses.some(r=>isCash(r)&&m(r))||S.savings.some(m)||S.transfers.some(t=>t.from===id||t.to===id)||S.bills.some(b=>b.src===id);}
+  return S.income.some(m)||S.expenses.some(r=>isCash(r)&&m(r))||S.savings.some(m)||S.transfers.some(t=>t.from===id||t.to===id)||S.bills.some(b=>b.src===id)||S.adjustments.some(r=>r.wallet===id);}
 function openWalletForm(w){const f=$('wForm');f.reset();
   if(w){f.elements.name.value=w.name;f.elements.type.value=w.type;f.elements.start.value=fmtAmtInput(w.start||0);}
   setWLbl();f.querySelector('.submit').textContent=w?'Save changes':'Add wallet';
@@ -628,6 +635,39 @@ $('wForm').addEventListener('submit',e=>{e.preventDefault();const f=e.target,o={
     Object.assign(w,o);}
   else S.wallets.push({id:'w_'+uid().slice(0,10),...o});
   const was=wEditId; cMeta(); closeSheet(); render(); toast(was?'Wallet updated':'Wallet added'); buzz();});
+function openReconcile(w,rec){
+  if(!w){toast('This wallet is no longer available');return;}
+  const f=$('recForm');f.reset();f.dataset.wallet=w.id;f.dataset.id=rec?rec.id:'';
+  $('recActualLbl').firstChild.textContent=isCredit(w)?'Actual amount owed (PHP)':'Actual balance (PHP)';
+  f.elements.date.min=S.settings.startDate;f.elements.date.max=today();f.elements.date.value=rec?rec.date:today();
+  f.elements.actual.value=rec?fmtAmtInput(rec.actual):'';f.elements.note.value=rec&&rec.note||'';
+  const refresh=()=>{
+    const date=f.elements.date.value||today(),current=walletBal(w,date,rec&&rec.id);
+    const currentText=isCredit(w)?(current<0?fmt(-current)+' owed':fmt(current)):fmt(current);
+    const actualText=f.elements.actual.value.trim();
+    let preview=`Tracked ${isCredit(w)?'amount owed':'balance'} on ${nice(date)}: <b>${currentText}</b>`;
+    if(actualText){
+      const actual=parseAmt(actualText),delta=(isCredit(w)?-actual:actual)-current;
+      preview+=`<br>Adjustment: <b>${delta>0?'+':''}${fmt(delta)}</b>`;
+    }
+    $('recPreview').innerHTML=preview;
+  };
+  f.elements.date.onchange=refresh;f.elements.actual.oninput=refresh;refresh();
+  openSheet({title:rec?'Edit reconciliation':'Reconcile '+w.name,node:f,
+    del:rec?()=>{const id=rec.id;closeSheet();deleteRec('adjustments',id);}:null});
+}
+$('recForm').addEventListener('submit',e=>{
+  e.preventDefault();const f=e.target,w=wById(f.dataset.wallet),recId=f.dataset.id;
+  if(!w){toast('This wallet is no longer available');return;}
+  const date=f.elements.date.value,actualText=f.elements.actual.value.trim(),actual=parseAmt(actualText);
+  if(!date||date<S.settings.startDate||date>today()){toast('Choose a date between your tracker start date and today');return;}
+  if(actualText===''||!Number.isFinite(actual)||actual<0||actual>1000000000){toast('Enter a valid actual balance');return;}
+  if(!cloudOK())return;
+  const current=walletBal(w,date,recId||undefined),delta=(isCredit(w)?-actual:actual)-current;
+  if(!Number.isFinite(delta)||Math.abs(delta)>1000000000){toast('The adjustment is outside the allowed amount range');return;}
+  const rec={id:recId||uid(),wallet:w.id,date,actual,delta,note:f.elements.note.value.trim()};
+  cPut('adjustments',rec);closeSheet();toast(recId?'Reconciliation updated':'Wallet reconciled');buzz();
+});
 async function deleteWallet(id){
   const w=wById(id); if(!w) return;
   if(!isCredit(w)&&S.wallets.filter(x=>!isCredit(x)).length<=1){toast('You need at least one non-credit wallet');return;}
@@ -680,6 +720,7 @@ document.addEventListener('click',async e=>{
     cPut('bills',{...b,skips:[...new Set([...(b.skips||[]),ym])]});buzz();
     toast(`${b.name} skipped for ${P(ym+'-01').toLocaleDateString('en-US',{month:'long'})}`,{label:'Undo',fn:()=>{const nb=S.bills.find(z=>z.id===id);if(nb) cPut('bills',{...nb,skips:(nb.skips||[]).filter(s=>s!==ym)});}});return;}
   if((x=c('[data-preset]'))){const cat=x.dataset.preset;openForm('bills',null,{name:cat,category:cat,amount:+S.budget[cat]||''});setTimeout(()=>$('billForm').elements.dueDay.focus(),90);toast('Now set the due day');return;}
+  if((x=c('[data-reconcile]'))){openReconcile(wById(x.dataset.reconcile));return;}
   if((x=c('[data-wcard]'))){openWalletForm(wById(x.dataset.wcard));return;}
   if((x=c('[data-gcard]'))){openEdit('goals',x.dataset.gcard);return;}
   if((x=c('[data-ck]'))){const g=x.dataset.ck;if(g==='qa') openQA(); else {go(g); if(g==='settings') setTimeout(()=>$('budCard').scrollIntoView({behavior:'smooth',block:'start'}),60);}return;}
@@ -738,6 +779,7 @@ $('btnCsv').onclick=()=>{
   S.expenses.forEach(r=>rows.push(['Expense',r.date,r.type,r.amount,r.paidFrom,'',wName(srcOf(r)),r.note]));
   S.savings.forEach(r=>rows.push(['Savings',r.date,'',r.amount,r.action,r.account,wName(wOf(r)),r.note]));
   S.transfers.forEach(r=>rows.push(['Transfer',r.date,'',r.amount,wName(r.from)+' → '+wName(r.to),'','',r.note]));
+  S.adjustments.forEach(r=>rows.push(['Reconciliation',r.date,'',r.delta,'', '',wName(r.wallet),`${isCredit(wById(r.wallet))?'Amount owed':'Balance'}: ${r.actual}${r.note?` · ${r.note}`:''}`]));
   download(`finance-hub-transactions-${today()}.csv`,rows.map(r=>r.map(q).join(',')).join('\n'),'text/csv');};
 $('fileImport').onchange=e=>{const file=e.target.files[0];if(!file) return;const rd=new FileReader();
   rd.onload=async()=>{let d;try{d=JSON.parse(rd.result);if(!d.settings||!d.lists) throw 0;}catch(_){toast('Invalid backup file');return;}
