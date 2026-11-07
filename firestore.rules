@@ -100,6 +100,15 @@ service cloud.firestore {
         && fields(['goal', 'amount', 'date'], ['note'])
         && label(d().goal, 60) && money(d().amount) && isDate(d().date) && optTxt('note', 500);
     }
+
+    match /users/{uid}/adjustments/{id} {
+      allow read, delete: if isOwner(uid);
+      allow create, update: if isOwner(uid)
+        && fields(['wallet', 'date', 'actual', 'delta'], ['note'])
+        && label(d().wallet, 60) && isDate(d().date) && money(d().actual)
+        && d().delta is number && d().delta >= -1000000000 && d().delta <= 1000000000
+        && optTxt('note', 500);
+    }
     // Anything else is denied by default.
   }
 }

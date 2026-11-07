@@ -98,7 +98,7 @@
     <select id="actMonth" style="flex:0 1 210px"></select>
   </div>
   <div class="ctrl" style="justify-content:space-between">
-    <div class="seg" id="actSeg"><button data-af="all" class="on">All</button><button data-af="expenses">Expenses</button><button data-af="income">Income</button><button data-af="transfers">Transfers</button><button data-af="savings">Savings</button></div>
+    <div class="seg" id="actSeg"><button data-af="all" class="on">All</button><button data-af="expenses">Expenses</button><button data-af="income">Income</button><button data-af="transfers">Transfers</button><button data-af="savings">Savings</button><button data-af="adjustments">Adjustments</button></div>
     <div class="addbtns"><button class="btn sm" data-new="expenses">+ Expense</button><button class="btn sec sm" data-new="income">+ Income</button><button class="btn sec sm" data-new="transfers">+ Transfer</button></div>
   </div>
   <div class="sumline" id="actSum"></div>
@@ -311,6 +311,15 @@
     <label id="wStartLbl">Starting balance (PHP)<input name="start" class="amt" type="text" inputmode="decimal" autocomplete="off" placeholder="0.00"></label>
     <div class="note full" style="margin:0">Starting balance = what was in the wallet on your tracker start date. For a credit card, enter what you owed on that date.</div>
     <button class="btn submit" type="submit">Add wallet</button>
+  </form>
+
+  <form class="entry" id="recForm" novalidate>
+    <div class="note full" id="recPreview" style="margin:0"></div>
+    <label class="full" id="recActualLbl">Actual balance (PHP)<input name="actual" class="amt" type="text" inputmode="decimal" autocomplete="off" placeholder="0.00" required></label>
+    <label>Date reconciled<input name="date" type="date" required></label>
+    <label class="full">Note (optional)<input name="note" type="text" maxlength="500" placeholder="e.g. checked against bank app"></label>
+    <div class="note full" style="margin:0">The difference is saved as a separate adjustment, so your original transactions stay unchanged. For credit cards, enter the amount owed.</div>
+    <button class="btn submit" type="submit">Save reconciliation</button>
   </form>
 
   <div class="mlist" id="moreMenu">
