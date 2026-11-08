@@ -176,6 +176,7 @@ details.sec>summary:hover{color:var(--ink)}
 .due-over{color:var(--bad)}.due-soon{color:var(--warn)}.due-ok{color:var(--muted)}
 .billsum{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;background:var(--emXL);border:1px solid var(--emL);border-radius:12px;padding:10px 14px;font-size:12px;color:var(--good);margin-bottom:6px}
 .billsum b{font-size:15px;display:block;color:var(--ink)}
+.bill-allotment{color:var(--good)!important}
 .presets{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 14px;align-items:center}
 .heat{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px}
 .hd{font-size:10px;color:var(--muted);text-align:center;font-weight:700;text-transform:uppercase;letter-spacing:.05em;padding-bottom:2px}

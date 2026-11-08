@@ -78,13 +78,14 @@ service cloud.firestore {
     match /users/{uid}/bills/{id} {
       allow read, delete: if isOwner(uid);
       allow create, update: if isOwner(uid)
-        && fields(['name', 'category', 'amount', 'dueDay'], ['src', 'status', 'created', 'skips'])
+        && fields(['name', 'category', 'amount', 'dueDay'], ['src', 'status', 'created', 'skips', 'allotments'])
         && label(d().name, 120) && label(d().category, 80) && money(d().amount)
         && d().dueDay is number && d().dueDay >= 1 && d().dueDay <= 31
         && optTxt('src', 60)
         && (!has('status') || d().status in ['Active', 'Paused'])
         && optDate('created')
-        && (!has('skips') || (d().skips is list && d().skips.size() <= 240));
+        && (!has('skips') || (d().skips is list && d().skips.size() <= 240))
+        && (!has('allotments') || (d().allotments is map && d().allotments.size() <= 240));
     }
 
     match /users/{uid}/goals/{id} {

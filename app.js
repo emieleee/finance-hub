@@ -5,7 +5,7 @@ window.FH_CONFIG={
   googleClientId:'',      // Google Drive backups – OAuth "Web client" ID, ends with .apps.googleusercontent.com
   recaptchaSiteKey:'6Ld1-BEuAAAAACuATBAA7uQ3VEFwfGpW4tVvIsUx'     // Firebase App Check – reCAPTCHA Enterprise (Fraud Defense) Web key ID
 };
-const APP_VERSION='3.1';
+const APP_VERSION='3.2';
 /* ================= STATE ================= */
 const $=id=>document.getElementById(id);
 const uid=()=>(crypto.randomUUID?crypto.randomUUID().replace(/-/g,'').slice(0,16):Math.random().toString(36).slice(2,14));
@@ -138,6 +138,7 @@ function nextPayday(fromIso){const d=P(fromIso),y=d.getFullYear(),m=d.getMonth()
 const ymOf=(y,m)=>`${y}-${pad(m+1)}`;
 function billDue(b,y,m){return iso(new Date(y,m,Math.min(+b.dueDay||1,eom(y,m).getDate())));}
 const billPayment=(b,ym)=>S.expenses.find(e=>e.billId===b.id&&e.billMonth===ym);
+const billAllotment=(b,ym)=>Math.max(0,+((b.allotments||{})[ym])||0);
 function billState(b,y,m){const ym=ymOf(y,m),due=billDue(b,y,m),t=today();
   const paid=billPayment(b,ym); if(paid) return {ym,due,st:'paid',paid};
   if((b.skips||[]).includes(ym)) return {ym,due,st:'skipped'};
@@ -375,7 +376,7 @@ function renderUpcoming(ub){
   if(!ub.list.length){el.innerHTML=`<div class="alert good" style="margin:0"><span>All bills before payday are paid. Nice!</span></div>`;return;}
   const tot=sum(ub.list,x=>+x.b.amount||0), after=balances().cash-tot;
   el.innerHTML=`<div class="billsum"><div>Due before payday<b>${fmt(tot)}</b></div><div style="text-align:right">Money in hand after bills<b class="${after<0?'neg':''}">${fmt(after)}</b></div></div>`+
-    ub.list.map(x=>`<div class="bill">${catIcon('expense',x.b.category)}<div class="bm"><b>${esc(x.b.name)}</b>${dueLabel(x)}</div><span class="amt">${fmt(x.b.amount)}</span><button class="btn sm" data-billpay="${x.b.id}|${x.ym}">Pay</button></div>`).join('');
+    ub.list.map(x=>{const allot=billAllotment(x.b,x.ym);return `<div class="bill">${catIcon('expense',x.b.category)}<div class="bm"><b>${esc(x.b.name)}</b>${dueLabel(x)}${allot?`<small class="bill-allotment">Allotted ${fmt(allot)}</small>`:''}</div><span class="amt">${fmt(x.b.amount)}</span><button class="btn sm" data-billpay="${x.b.id}|${x.ym}">Pay</button></div>`;}).join('');
 }
 let heatSel=null;
 function renderHeat(month){
@@ -427,6 +428,10 @@ function renderActivity(){
 function renderBills(){
   const T=P(today()),y=T.getFullYear(),m=T.getMonth(),ub=upcomingBills();
   const paidM=S.bills.map(b=>billState(b,y,m)).filter(x=>x.st==='paid');
+  const active=S.bills.filter(b=>b.status!=='Paused').map(b=>({b,x:billState(b,y,m)}))
+    .filter(({b,x})=>x.st!=='paid'&&x.st!=='skipped'&&(!b.created||x.ym>=b.created.slice(0,7)));
+  const cash=balances().cash,allotted=sum(active,({b,x})=>billAllotment(b,x.ym)),available=cash-allotted;
+  $('billAllocationSummary').innerHTML=`<div>Money in hand<b>${fmt(cash)}</b></div><div>Allotted this month<b>${fmt(allotted)}</b></div><div>Available to allot<b class="${available<0?'neg':''}">${fmt(available)}</b></div>`;
   $('kpiBills').innerHTML=kpi('Due before payday',fmt(sum(ub.list,x=>+x.b.amount||0)),`${ub.list.length} bill${ub.list.length===1?'':'s'} · payday ${short(P(ub.np))}`,'','bill','amber')+
     kpi('Overdue',String(ub.list.filter(x=>x.st==='overdue').length),'',ub.list.some(x=>x.st==='overdue')?'neg':'','alert','red')+
     kpi('Paid this month',fmt(sum(paidM,x=>x.paid.amount)),`${paidM.length} of ${S.bills.filter(b=>b.status!=='Paused').length} active bills`,'','check','em');
@@ -434,11 +439,29 @@ function renderBills(){
   $('billPresets').innerHTML=pre.length?`<span class="note" style="margin:0">Quick start:</span>`+pre.map(c=>`<button class="qcat" type="button" data-preset="${esc(c)}">${catIcon('expense',c)}${esc(c)}</button>`).join(''):'';
   const rs=[...S.bills].sort((a,b)=>(+a.dueDay||0)-(+b.dueDay||0));
   $('billList').innerHTML=rs.length?`<div class="tlist">${rs.map(b=>{const x=billState(b,y,m);
+    const allot=billAllotment(b,x.ym);
     const st=b.status==='Paused'?'<span class="pill">Paused</span>':x.st==='paid'?`<span class="pill good">Paid ${short(P(x.paid.date))}</span>`:x.st==='skipped'?'<span class="pill">Skipped</span>':x.st==='overdue'?'<span class="pill bad">Overdue</span>':x.st==='soon'?`<span class="pill warn">Due ${short(P(x.due))}</span>`:`<span class="pill">Due ${short(P(x.due))}</span>`;
     const can=b.status!=='Paused'&&x.st!=='paid'&&x.st!=='skipped';
-    return `<div class="trow" data-kind="bills" data-id="${b.id}"><div class="tmain">${catIcon('expense',b.category)}<div class="tt"><b>${esc(b.name)} ${st}</b><small>${fmt(b.amount)} · every ${ordinal(+b.dueDay)} · ${esc(wName(b.src||defaultWallet()))}</small></div><div class="tacts">${can?`<button class="ibtn" data-billskip="${b.id}|${x.ym}">Skip</button><button class="btn sm" data-billpay="${b.id}|${x.ym}">Pay</button>`:''}</div></div></div>`;}).join('')}</div>`
+    return `<div class="trow" data-kind="bills" data-id="${b.id}"><div class="tmain">${catIcon('expense',b.category)}<div class="tt"><b>${esc(b.name)} ${st}</b><small>${fmt(b.amount)} · every ${ordinal(+b.dueDay)} · ${esc(wName(b.src||defaultWallet()))}</small><small class="bill-allotment">${allot?`Allotted ${fmt(allot)} of ${fmt(b.amount)}`:'Nothing allotted'} for this month</small></div><div class="tacts">${can?`<button class="ibtn" data-billallot="${b.id}|${x.ym}">${allot?'Edit allotment':'Allot'}</button><button class="ibtn" data-billskip="${b.id}|${x.ym}">Skip</button><button class="btn sm" data-billpay="${b.id}|${x.ym}">Pay</button>`:''}</div></div></div>`;}).join('')}</div>`
     :emptyState('bill','No recurring bills yet','Add a bill above or tap a quick-start category.','<button class="btn sm" data-new="bills">+ Add bill</button>');
 }
+function openBillAllotment(id,ym){
+  const b=S.bills.find(z=>z.id===id);if(!b)return;
+  const f=$('billAllotForm');f.reset();f.dataset.billId=id;f.dataset.month=ym;
+  f.elements.amount.value=billAllotment(b,ym)?fmtAmtInput(billAllotment(b,ym)):'';
+  openSheet({title:`Allot to ${b.name} · ${P(ym+'-01').toLocaleDateString('en-US',{month:'long',year:'numeric'})}`,node:f});
+  if(!matchMedia('(pointer:coarse)').matches)setTimeout(()=>f.elements.amount.focus(),60);
+}
+$('billAllotForm').addEventListener('submit',e=>{
+  e.preventDefault();const f=e.target,amount=parseAmt(f.elements.amount.value);
+  if(!Number.isFinite(amount)||amount<0||amount>1000000000){toast('Enter a valid amount');return;}
+  const b=S.bills.find(z=>z.id===f.dataset.billId),ym=f.dataset.month;
+  if(!b||!ym){toast('This bill is no longer available');return;}
+  if(!cloudOK())return;
+  const allotments={...(b.allotments||{})};
+  if(amount)allotments[ym]=amount;else delete allotments[ym];
+  cPut('bills',{...b,allotments});closeSheet();toast(amount?`${fmt(amount)} allotted to ${b.name}`:'Bill allotment cleared');buzz();
+});
 function renderWallets(){
   const b=balances(), t=today(), mA=t.slice(0,8)+'01';
   $('kpiW').innerHTML=kpi('Money in hand',fmt(b.cash),'All non-credit wallets','','wallet','em')+kpi('Credit card owed',fmt(Math.max(b.owed,0)),'',b.owed>0.005?'neg':'','down','red')+kpi('Cash minus debt',fmt(b.cash-b.owed),'','','flow','navy');
@@ -719,6 +742,7 @@ document.addEventListener('click',async e=>{
   if((x=c('[data-qcat]'))&&c('#qaCats')){document.querySelectorAll('#qaCats .qcat').forEach(q=>q.classList.toggle('on',q===x));return;}
   if((x=c('[data-qamt]'))){$('qaAmt').value=fmtAmtInput(x.dataset.qamt);return;}
   if((x=c('[data-heat]'))){heatSel=heatSel===x.dataset.heat?null:x.dataset.heat;renderHeat($('fMonth').value);return;}
+  if((x=c('[data-billallot]'))){const [id,ym]=x.dataset.billallot.split('|');openBillAllotment(id,ym);return;}
   if((x=c('[data-billpay]'))){const [id,ym]=x.dataset.billpay.split('|'),b=S.bills.find(z=>z.id===id);if(b) openQA({title:'Pay '+b.name,type:b.category,amount:b.amount,src:b.src,note:b.name,billId:b.id,billMonth:ym});return;}
   if((x=c('[data-billskip]'))){const [id,ym]=x.dataset.billskip.split('|'),b=S.bills.find(z=>z.id===id);if(!b||!cloudOK()) return;
     cPut('bills',{...b,skips:[...new Set([...(b.skips||[]),ym])]});buzz();

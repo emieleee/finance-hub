@@ -112,8 +112,9 @@
   <div class="card">
     <div class="row-between"><h2>Recurring bills</h2><button class="btn sm" data-new="bills">+ Add bill</button></div>
     <div class="presets" id="billPresets"></div>
+    <div id="billAllocationSummary" class="billsum"></div>
     <div id="billList"></div>
-    <div class="note">Tap <b>Pay</b> to log a bill as an expense. You can adjust the amount, like a higher electric bill. <b>Skip</b> marks a month that doesn't apply. Tap a bill to edit it.</div>
+    <div class="note">Allotments are reminders only and don’t move or deduct money. They apply to this month’s bill. Tap <b>Pay</b> to log a bill as an expense. You can adjust the amount, like a higher electric bill. <b>Skip</b> marks a month that doesn't apply. Tap a bill to edit it.</div>
   </div>
 </section>
 
@@ -289,6 +290,12 @@
     <label class="full">Status<select name="status"><option>Active</option><option>Paused</option></select></label>
     <div class="note full" style="margin:0">Due days past month-end use the last day of the month.</div>
     <button class="btn submit" type="submit">Add bill</button>
+  </form>
+
+  <form class="entry" id="billAllotForm" novalidate>
+    <label class="full">Amount to set aside (PHP)<input name="amount" class="amt" type="text" inputmode="decimal" autocomplete="off" placeholder="0.00"></label>
+    <div class="note full" style="margin:0">This is a reminder, not a transfer. Enter 0 to clear this bill’s allotment.</div>
+    <button class="btn submit" type="submit">Save allotment</button>
   </form>
 
   <form class="entry" id="goalForm" novalidate>
