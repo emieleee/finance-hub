@@ -114,7 +114,7 @@
     <div class="presets" id="billPresets"></div>
     <div id="billAllocationSummary" class="billsum"></div>
     <div id="billList"></div>
-    <div class="note">Allotments are reminders only and don’t move or deduct money. They apply to this month’s bill. Tap <b>Pay</b> to log a bill as an expense. You can adjust the amount, like a higher electric bill. <b>Skip</b> marks a month that doesn't apply. Tap a bill to edit it.</div>
+    <div class="note">Allotments reserve money from a selected wallet and reduce the amount available to spend; they don't change the wallet's actual balance. They apply to this month’s bill. Tap <b>Pay</b> to log a bill as an expense. You can adjust the amount, like a higher electric bill. <b>Skip</b> marks a month that doesn't apply. Tap a bill to edit it.</div>
   </div>
 </section>
 
@@ -293,8 +293,9 @@
   </form>
 
   <form class="entry" id="billAllotForm" novalidate>
-    <label class="full">Amount to set aside (PHP)<input name="amount" class="amt" type="text" inputmode="decimal" autocomplete="off" placeholder="0.00"></label>
-    <div class="note full" style="margin:0">This is a reminder, not a transfer. Enter 0 to clear this bill’s allotment.</div>
+    <label>Amount to set aside (PHP)<input name="amount" class="amt" type="text" inputmode="decimal" autocomplete="off" placeholder="0.00"></label>
+    <label>Reserve from wallet<select name="wallet" class="wsel-cash"></select></label>
+    <div class="note full" style="margin:0">This reduces the wallet’s available-to-spend amount but does not change its actual balance. Enter 0 to clear this bill’s allotment.</div>
     <button class="btn submit" type="submit">Save allotment</button>
   </form>
 
