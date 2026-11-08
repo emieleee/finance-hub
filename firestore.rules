@@ -3,6 +3,7 @@ rules_version = '2';
 // 1) Only your Google account can read or write.
 // 2) Every save is checked: amounts must be numbers, dates must be real YYYY-MM-DD dates,
 //    text has length limits, and records can't contain unexpected fields.
+// UPLOAD TO FIREBASE WHENEVER THERE ARE CHANGES
 // IMPORTANT: replace YOUR_EMAIL@gmail.com below with the Gmail address you sign in with.
 service cloud.firestore {
   match /databases/{database}/documents {
