@@ -7,16 +7,16 @@ import {
 /* ================= STATE ================= */
 const $=id=>document.getElementById(id);
 const uid=()=>(crypto.randomUUID?crypto.randomUUID().replace(/-/g,'').slice(0,16):Math.random().toString(36).slice(2,14));
-const KINDS=['income','expenses','savings','goals','allocs','transfers','bills','adjustments'];
+const KINDS=['income','expenses','savings','goals','allocs','transfers','bills','adjustments','debts','debtInstallments'];
 const defaultWallets=(startCash=0)=>[{id:'w_cash',name:'Cash',type:'cash',start:+startCash||0},{id:'w_gcash',name:'GCash',type:'ewallet',start:0},{id:'w_maya',name:'Maya',type:'ewallet',start:0},{id:'w_bank',name:'Bank',type:'bank',start:0},{id:'w_cc',name:'Credit Card',type:'credit',start:0}];
 const EMPTY=()=>{const d=new Date();return {
   settings:{startDate:`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-01`,startCash:0,startOther:0,startGoal:0,sal15:0,sal30:0,lastBackup:'',lastBackupWhere:'',backupTo:'file',backupRemind:true,driveFolder:''},
   lists:{
-    expense:['Rent','Food','Commute','Grocery','Online Shopping','Online Payment','Gift','Electric','Water','Internet','Others'],
+    expense:['Rent','Food','Commute','Grocery','Online Shopping','Online Payment','Debt repayment','Gift','Electric','Water','Internet','Others'],
     income:['Salary','13th Month Pay','Bonus','Side Gig','Other Income'],
     savings:['Emergency Fund','General Savings','Investment','Travel / Major Purchase','Goal','Others']
   },
-  budget:{},wallets:defaultWallets(0),income:[],expenses:[],savings:[],goals:[],allocs:[],transfers:[],bills:[],adjustments:[]};};
+  budget:{},wallets:defaultWallets(0),income:[],expenses:[],savings:[],goals:[],allocs:[],transfers:[],bills:[],adjustments:[],debts:[],debtInstallments:[]};};
 let S=EMPTY(), userName='', userEmail='';
 let cloud=null;
 const finance=createFinance(()=>S);
@@ -27,6 +27,7 @@ const {
   wFlows, walletBal, wOf
 }=finance;
 let adjustmentsAvailable=true;
+let debtTrackingAvailable=true;
 const LS={get:(k,d)=>{try{const v=localStorage.getItem(k);return v===null?d:v;}catch(_){return d;}},set:(k,v)=>{try{localStorage.setItem(k,v);}catch(_){}}};
 let loaded=new Set(), ready=false, readyTimer=null;
 function markLoaded(k){if(ready) return; loaded.add(k); if(loaded.size>=KINDS.length+1) setReady();}
@@ -39,16 +40,17 @@ function cMeta(){if(!cloudOK())return;cloud.putMeta(JSON.parse(JSON.stringify({s
 let _rq=0;function schedule(){if(_rq)return;_rq=requestAnimationFrame(()=>{_rq=0;render();});}
 function onData(k,rows){S[k]=rows;markLoaded(k);schedule();}
 function onAdjustmentPermissionDenied(){adjustmentsAvailable=false;schedule();toast('Wallet reconciliation is unavailable until the updated Firestore rules are published.');}
+function onDebtPermissionDenied(){debtTrackingAvailable=false;schedule();toast('Debt tracking is unavailable until the updated Firestore rules are published.');}
 function onMeta(m){const d=EMPTY();S.settings={...d.settings,...(m&&m.settings||{})};S.lists=(m&&m.lists)||d.lists;S.budget=(m&&m.budget)||{};
   S.wallets=(m&&Array.isArray(m.wallets)&&m.wallets.length)?m.wallets:defaultWallets(m&&m.settings&&m.settings.startCash);markLoaded('meta');schedule();};
 function setSync(st){const el=$('syncBadge');if(!el)return;el.className='sync '+st;el.innerHTML='<i></i>'+({synced:'Synced',saving:'Saving…',offline:'Offline – will sync'}[st]);}
-function onSignedIn(u){adjustmentsAvailable=true;$('auth').classList.add('hide');
+function onSignedIn(u){adjustmentsAvailable=true;debtTrackingAvailable=true;$('auth').classList.add('hide');
   userName=((u.displayName||'').trim().split(/\s+/)[0])||'';userEmail=u.email||'';
   loaded=new Set();ready=false;document.body.classList.add('loading');clearTimeout(readyTimer);readyTimer=setTimeout(setReady,8000);
   const av=u.photoURL?`<img src="${esc(u.photoURL)}" alt="" referrerpolicy="no-referrer">`:esc((u.displayName||u.email||'?')[0].toUpperCase());
   $('topRight').innerHTML=`<div class="syncrow"><span class="sync offline" id="syncBadge"><i></i>Connecting…</span><div class="avatar" title="${esc(u.email||'')}">${av}</div></div>`;
   $('acctAv').innerHTML=av;$('acctEmail').textContent=u.email||u.displayName||'';render();}
-function onSignedOut(){S=EMPTY();ready=false;closeSheet();render();$('topRight').innerHTML='';$('auth').classList.remove('hide');
+function onSignedOut(){S=EMPTY();ready=false;debtTrackingAvailable=true;closeSheet();render();$('topRight').innerHTML='';$('auth').classList.remove('hide');
   $('authLoading').style.display='none';$('authBtn').style.display='';};
 function showAuthError(e){$('authLoading').style.display='none';$('authBtn').style.display='';
   $('authErr').textContent=e.code==='auth/unauthorized-domain'?'This site address is not authorized in Firebase (Authentication → Settings → Authorized domains).':(e.code?'Sign-in failed: '+e.code:e.message);};
@@ -70,6 +72,47 @@ const wName=id=>id==='__goal'?'Goal Funds':((wById(id)||{}).name||'—');
 function billProgressHtml(b,ym){
   const a=billAllotmentSummary(b,ym);
   return `<div class="bill-progress"><div class="bill-progress-label"><span>Allotted ${fmt(a.amount)} of ${fmt(a.total)} · ${esc(wName(a.wallet))}</span><b class="${a.remaining>0.005?'':'complete'}">${a.remaining>0.005?`${fmt(a.remaining)} left to allot`:'Fully allotted'}</b></div><div class="bar" role="progressbar" aria-label="${esc(b.name)} allotment progress" aria-valuemin="0" aria-valuemax="${a.total}" aria-valuenow="${Math.min(a.amount,a.total)}"><i style="width:${a.progress}%"></i></div></div>`;
+}
+function debtPaidAmount(debtId,installmentId){
+  return sum(S.expenses.filter(expense=>expense.debtId===debtId&&(!installmentId||expense.debtInstallmentId===installmentId)));
+}
+const debtOutstanding=debt=>Math.max(0,(+debt.amount||0)-debtPaidAmount(debt.id));
+function debtSchedule(debt){
+  return S.debtInstallments.filter(item=>item.debtId===debt.id)
+    .sort((a,b)=>(a.sequence-b.sequence)||a.dueDate.localeCompare(b.dueDate))
+    .map(item=>{const paid=debtPaidAmount(debt.id,item.id);return {...item,paid,remaining:Math.max(0,(+item.amount||0)-paid),days:Math.round((P(item.dueDate)-P(today()))/864e5)};});
+}
+function upcomingDebtPayments(){
+  return S.debts.flatMap(debt=>debtSchedule(debt).filter(item=>item.remaining>0.005).map(item=>({debt,...item})))
+    .sort((a,b)=>a.dueDate.localeCompare(b.dueDate)||a.sequence-b.sequence);
+}
+function debtDueLabel(days){
+  return days<0?`Overdue by ${Math.abs(days)} day${Math.abs(days)===1?'':'s'}`:
+    days===0?'Due today':days===1?'Due tomorrow':`Due in ${days} days`;
+}
+function debtInstallmentRows(debt,items){
+  return items.map(item=>`<div class="debt-plan-row"><div><b>${debt.installment?`Installment ${item.sequence}`:'Payment due'}</b><small>${nice(item.dueDate)}</small></div>
+    <div class="debt-plan-amount"><b>${fmt(item.remaining)}</b><small>of ${fmt(item.amount)}${item.remaining<=0.005?' · Paid':''}</small></div>
+    ${item.remaining>0.005?`<button class="btn sec sm" data-debtpay="${esc(debt.id)}|${esc(item.id)}">Record payment</button>`:'<span class="pill good">Paid</span>'}</div>`).join('');
+}
+function debtCardsHtml(){
+  if(!S.debts.length) return `<div class="card">${emptyState('wallet','No debts yet','Track a shopping-app balance, credit card, personal loan or other debt.')}</div>`;
+  return `<div class="goalcards">${S.debts.map(debt=>{
+    const items=debtSchedule(debt),next=items.find(item=>item.remaining>0.005),remaining=debtOutstanding(debt);
+    return `<article class="gcard debt-card"><div class="top"><div style="min-width:0"><b>${esc(debt.name)}</b><div style="margin-top:6px"><span class="pill">${esc(debt.medium)}</span>${debt.installment?' <span class="pill">Installment</span>':''}</div></div><button class="ibtn" data-debt-edit="${esc(debt.id)}">Edit</button></div>
+      <div class="debt-balance"><span>Outstanding</span><b>${fmt(remaining)}</b></div><div class="gmeta"><span>Starting balance</span><span>${fmt(debt.amount)}</span></div>
+      ${next?`<div class="debt-next"><span>${debtDueLabel(next.days)} · ${nice(next.dueDate)}</span><b>${fmt(next.remaining)}</b></div>`:'<div class="debt-next"><span>Paid off</span><b>₱0.00</b></div>'}
+      ${next?`<button class="btn sm" data-debtpay="${esc(debt.id)}|${esc(next.id)}">Record payment</button>`:''}
+      ${debt.installment?`<details class="debt-plan"><summary>Installment plan · ${items.length} payments</summary>${debtInstallmentRows(debt,items)}</details>`:''}</article>`;
+  }).join('')}</div>`;
+}
+function renderDebtDashboard(){
+  const total=sum(S.debts,debtOutstanding),due=upcomingDebtPayments(),top=due[0];
+  $('debtDash').innerHTML=`<div class="row-between"><h2>Debt snapshot</h2><button class="ibtn" data-goto="debts">Manage debts ›</button></div>
+    ${!debtTrackingAvailable?`<div class="alert warn" style="margin:0">Debt tracking needs the updated Firestore rules. Publish <b>firestore.rules</b> in Firebase Console to enable it.</div>`:
+      S.debts.length?`<div class="debt-summary"><div><span>Total outstanding</span><b>${fmt(total)}</b></div><div><span>Next payment</span><b>${top?fmt(top.remaining):'None due'}</b></div><div><span>${top?`${esc(top.debt.name)} · ${nice(top.dueDate)}`:'No scheduled payments'}</span><b>${top?debtDueLabel(top.days):`${S.debts.length} debt${S.debts.length===1?'':'s'} tracked`}</b></div></div>
+      ${due.length?`<div class="debt-dash-list">${due.slice(0,3).map(item=>`<div><span><b>${esc(item.debt.name)}</b><small>${nice(item.dueDate)} · ${debtDueLabel(item.days)}</small></span><b>${fmt(item.remaining)}</b></div>`).join('')}</div>`:''}`
+      :`<p class="note">Track what you owe and see upcoming payments here.</p><button class="btn sec sm" data-new="debts">+ Add debt</button>`}</div>`;
 }
 function dueLabel(x){return x.st==='overdue'?`<small class="due-over">Overdue · ${short(P(x.due))}</small>`:x.days===0?`<small class="due-soon">Due today</small>`:x.days===1?`<small class="due-soon">Due tomorrow · ${short(P(x.due))}</small>`:`<small class="${x.st==='soon'?'due-soon':'due-ok'}">In ${x.days} days · ${short(P(x.due))}</small>`;}
 const ordinal=n=>{const s=['th','st','nd','rd'],v=n%100;return n+(s[(v-20)%10]||s[v]||s[0]);};
@@ -133,7 +176,7 @@ const secOpen=id=>{const el=document.querySelector(`details[data-sec="${id}"]`);
 /* ================= ACTIVITY ITEMS / ROWS ================= */
 const goalName=id=>(S.goals.find(g=>g.id===id)||{}).name||'(deleted goal)';
 function buildItems(kinds){const out=[];const has=k=>kinds.includes(k);
-  if(has('expenses')) S.expenses.forEach(r=>out.push({kind:'expenses',r,date:r.date||'',title:r.type,sub:[wName(srcOf(r)),r.note].filter(Boolean),amt:-(+r.amount||0),icon:catIcon('expense',r.type),tag:r.billId?'<span class="pill">Bill</span>':''}));
+  if(has('expenses')) S.expenses.forEach(r=>out.push({kind:'expenses',r,date:r.date||'',title:r.type,sub:[wName(srcOf(r)),r.note].filter(Boolean),amt:-(+r.amount||0),icon:catIcon('expense',r.type),tag:r.billId?'<span class="pill">Bill</span>':r.debtId?'<span class="pill">Debt</span>':''}));
   if(has('income')) S.income.forEach(r=>{const tm=timing(r);out.push({kind:'income',r,date:r.date||'',title:r.type,sub:[wName(wOf(r)),r.desc,payCycle(r)].filter(Boolean),amt:+r.amount||0,icon:catIcon('income',r.type),tag:(tm&&tm!=='On Time'&&tm!=='Unscheduled')?statusPill(tm):''});});
   if(has('transfers')) S.transfers.forEach(r=>out.push({kind:'transfers',r,date:r.date||'',title:`${wName(r.from)} → ${wName(r.to)}`,sub:[r.note||'Transfer'],amt:+r.amount||0,mv:true,icon:`<span class="cico" style="--c:#6366F1">${svgI(IC.swap)}</span>`}));
   if(has('savings')) S.savings.forEach(r=>out.push({kind:'savings',r,date:r.date||'',title:`${r.action==='Deposit'?'Saved to':'Withdrew from'} ${r.account}`,sub:[wName(wOf(r)),r.note].filter(Boolean),amt:r.action==='Deposit'?-(+r.amount||0):+r.amount||0,mv:true,icon:catIcon('savings',r.account)}));
@@ -169,7 +212,7 @@ function renderDash(){
     :`<div class="hm-status short"><span class="si">${svgI(IC.alert,2.2)}</span><div class="st"><b>${fmt(-now.availableCash)} <span>below zero</span></b>Your available wallet balances are below zero.</div></div>`;
   $('heroMain').innerHTML=`<div class="hm-top"><div class="l">Money in hand · safe to spend before payday</div><div class="v">${fmt(now.availableCash)}</div><div class="s">${fmt(now.cash)} in ${nCash} wallet${nCash===1?'':'s'} − ${fmt(reserved)} allotted to bills · next payday ${nice(ub.np)}${now.owed>0.005?' · excludes credit cards':''}</div></div>
     ${status}
-    <div class="hm-stats"><div><span>Net worth</span><b>${fmt(now.cash+now.totalSav-now.owed)}</b></div>${now.owed>0.005?`<div><span>Card owed</span><b>${fmt(now.owed)}</b></div>`:`<div><span>Total savings</span><b>${fmt(now.totalSav)}</b></div>`}<div><span>Total due before payday</span><b>${fmt(ubTotal)}</b></div></div>`;
+    <div class="hm-stats"><div><span>Net worth</span><b>${fmt(now.cash+now.totalSav-now.owed-sum(S.debts,debtOutstanding))}</b></div>${now.owed>0.005?`<div><span>Card owed</span><b>${fmt(now.owed)}</b></div>`:`<div><span>Total savings</span><b>${fmt(now.totalSav)}</b></div>`}<div><span>Total due before payday</span><b>${fmt(ubTotal)}</b></div></div>`;
   // budget card
   const monthExp=S.expenses.filter(e=>inR(e.date,mA,mB));
   const budTotal=S.lists.expense.reduce((s,c)=>s+(+S.budget[c]||0),0), spentM=sum(monthExp), used=budTotal?spentM/budTotal:0, left=budTotal-spentM;
@@ -190,6 +233,7 @@ function renderDash(){
   const bd=backupDue(); if(bd) al.push(`<div class="alert warn"><span>${bd.days==null?"You haven't made a backup yet.":`Your last backup was ${bd.days} days ago.`} A monthly backup keeps a safe copy outside the app.</span><button class="btn sm abtn" data-backup>Back up now</button></div>`);
   const pend=S.income.filter(r=>!r.date).length; if(pend) al.push(`<div class="alert warn"><span>${pend} income record${pend>1?'s':''} pending (no date received).</span></div>`);
   $('alerts').innerHTML=al.join('');
+  renderDebtDashboard();
   renderChecklist(); renderUpcoming(ub); renderHeat(month);
   // period KPIs
   $('kpiPeriod').innerHTML=
@@ -373,6 +417,13 @@ function renderGoals(){
   const it=buildItems(['allocs']);
   $('allocList').innerHTML=it.length?groupsHtml(it):emptyState('stack','No allocations yet','Deposit to the “Goal” savings account, then allocate funds to a goal.');
 }
+function renderDebts(){
+  const debtDue=upcomingDebtPayments()[0],debtTotal=sum(S.debts,debtOutstanding);
+  $('kpiDebts').innerHTML=kpi('Total outstanding',fmt(debtTotal),'Across all tracked debts','','wallet','red')+
+    kpi('Next payment',debtDue?fmt(debtDue.remaining):'—',debtDue?`${debtDue.debt.name} · ${nice(debtDue.dueDate)}`:'No payments scheduled','','bill','amber')+
+    kpi('Active debts',String(S.debts.filter(debt=>debtOutstanding(debt)>0.005).length),`${S.debts.length} tracked`,'','flow','navy');
+  $('debtCardsTab').innerHTML=debtTrackingAvailable?debtCardsHtml():`<div class="alert warn">Debt tracking needs the updated Firestore rules. Publish <b>firestore.rules</b> in Firebase Console to enable it.</div>`;
+}
 function renderSettings(){
   const ae=document.activeElement; if(ae&&ae.closest&&ae.closest('#tab-settings')&&ae.tagName==='INPUT') return;
   const f=$('setForm'); Object.entries(S.settings).forEach(([k,v])=>{if(f.elements[k]) f.elements[k].value=v;});
@@ -388,7 +439,7 @@ function renderSettings(){
 
 /* ================= RENDER DISPATCH ================= */
 let curTab='dash';
-const TITLES={activity:['Activity','All your income, expenses, transfers and savings'],bills:['Bills','Recurring bills and what\'s due before payday'],wallets:['Wallets','Cash, e-wallets, bank and credit cards'],savings:['Savings','Deposits, withdrawals and account balances'],goals:['Goals','Plan and fund the things you want'],settings:['Settings','Balances, budget, categories and appearance']};
+const TITLES={activity:['Activity','All your income, expenses, transfers and savings'],bills:['Bills','Recurring bills and what\'s due before payday'],wallets:['Wallets','Cash, e-wallets, bank and credit cards'],savings:['Savings','Deposits, withdrawals and account balances'],goals:['Goals','Plan and fund the things you want'],debts:['Debts','Track balances and upcoming repayment dates'],settings:['Settings','Balances, budget, categories and appearance']};
 function refreshSelects(){
   const ms=monthsList().map(v=>({v,l:mLabel(v)}));
   const fm=$('fMonth'),had=fm.value; fillSelect(fm,ms);
@@ -418,11 +469,12 @@ function render(){
   if(curTab==='wallets') renderWallets();
   if(curTab==='savings') renderSavings();
   if(curTab==='goals') renderGoals();
+  if(curTab==='debts') renderDebts();
   if(curTab==='settings') renderSettings();
 }
 
 /* ================= NAVIGATION ================= */
-const MORE_TABS=['bills','savings','goals','settings'];
+const MORE_TABS=['bills','savings','goals','debts','settings'];
 function go(tab){
   curTab=tab;
   document.querySelectorAll('#nav button').forEach(x=>x.classList.toggle('active',x.dataset.tab===tab));
@@ -477,6 +529,7 @@ function syncSal(){const f=$('incForm'),isSal=f.elements.type.value==='Salary',h
 $('incType').addEventListener('change',syncSal);
 $('salToggle').onclick=()=>{salOpen=!salOpen;syncSal();};
 function openForm(kind,rec,preset,seg){
+  if(kind==='debts'){openDebtForm(rec);return;}
   const c=FORMS[kind],f=$(c.form); f.reset(); salOpen=false; refreshSelects();
   editing[kind]=rec?rec.id:null;
   if(f.elements.date&&kind!=='goals') f.elements.date.value=today();
@@ -489,6 +542,106 @@ function openForm(kind,rec,preset,seg){
   openSheet({title:rec?'Edit '+c.noun:c.title,node:f,seg:rec?null:seg,del:rec?()=>{const id=rec.id;closeSheet();deleteRec(kind,id);}:null});
   if(!rec&&!matchMedia('(pointer:coarse)').matches) setTimeout(()=>{const a=f.querySelector('.amt,input[name=name]');a&&a.focus();},60);
 }
+function debtInstallmentInput(item={},index=0){
+  return `<div class="debt-install-input"><label>Payment ${index+1} due<input type="date" data-debt-inst-date value="${esc(item.dueDate||'')}"></label>
+    <label>Amount (PHP)<input class="amt" type="text" inputmode="decimal" data-debt-inst-amount value="${item.amount==null?'':fmtAmtInput(item.amount)}"></label>
+    <button class="ibtn" type="button" data-debt-inst-remove aria-label="Remove payment ${index+1}">×</button><input type="hidden" data-debt-inst-id value="${esc(item.id||'')}"></div>`;
+}
+function setDebtInstallmentInputs(items){
+  $('debtInstallments').innerHTML=items.map((item,index)=>debtInstallmentInput(item,index)).join('');
+}
+function syncDebtInstallmentMode(){
+  const f=$('debtForm'),on=f.elements.installment.checked;
+  $('debtSingleDueRow').classList.toggle('hide',on);
+  $('debtInstallmentWrap').classList.toggle('hide',!on);
+  if(on&&!$('debtInstallments').children.length) setDebtInstallmentInputs([{},{}]);
+}
+function openDebtForm(rec){
+  if(!debtTrackingAvailable){toast('Publish the updated Firestore rules before adding or editing debts');return;}
+  const f=$('debtForm');f.reset();refreshSelects();f.dataset.id=rec?rec.id:'';
+  f.elements.name.value=rec?rec.name:'';
+  f.elements.medium.value=rec?rec.medium:'';
+  f.elements.amount.value=rec?fmtAmtInput(rec.amount):'';
+  f.elements.installment.checked=!!(rec&&rec.installment);
+  const items=rec?debtSchedule(rec):[];
+  f.elements.dueDate.value=items[0]&&items[0].dueDate||'';
+  setDebtInstallmentInputs(rec&&rec.installment?items.map(item=>({...item,amount:item.amount})):[]);
+  syncDebtInstallmentMode();
+  f.querySelector('.submit').textContent=rec?'Save changes':'Add debt';
+  openSheet({title:rec?'Edit debt':'Add debt',node:f,del:rec?()=>{const id=rec.id;closeSheet();deleteRec('debts',id);}:null});
+  if(!rec&&!matchMedia('(pointer:coarse)').matches) setTimeout(()=>f.elements.name.focus(),60);
+}
+$('debtForm').elements.installment.addEventListener('change',syncDebtInstallmentMode);
+$('debtInstallmentWrap').addEventListener('click',e=>{
+  if(e.target.closest('[data-debt-inst-add]')){
+    const rows=[...$('debtInstallments').querySelectorAll('.debt-install-input')];
+    if(rows.length>=60){toast('A debt can have up to 60 installments');return;}
+    const items=rows.map(row=>({id:row.querySelector('[data-debt-inst-id]').value,dueDate:row.querySelector('[data-debt-inst-date]').value,amount:parseAmt(row.querySelector('[data-debt-inst-amount]').value)}));
+    items.push({});setDebtInstallmentInputs(items);return;
+  }
+  const remove=e.target.closest('[data-debt-inst-remove]');
+  if(remove){remove.closest('.debt-install-input').remove();[...$('debtInstallments').querySelectorAll('.debt-install-input')].forEach((row,index)=>{row.querySelector('label').firstChild.textContent=`Payment ${index+1} due`;});}
+});
+$('debtForm').addEventListener('submit',e=>{
+  e.preventDefault();const f=e.target,name=f.elements.name.value.trim(),medium=f.elements.medium.value.trim(),amount=parseAmt(f.elements.amount.value);
+  if(!name){toast('Enter a debt name');return;}
+  if(!medium){toast('Enter where the debt is from');return;}
+  if(!(amount>0)){toast('Enter the total amount owed');return;}
+  const installment=f.elements.installment.checked;
+  let plan;
+  if(installment){
+    const rows=[...$('debtInstallments').querySelectorAll('.debt-install-input')];
+    if(rows.length<2){toast('An installment plan needs at least two payments');return;}
+    plan=rows.map((row,index)=>({id:row.querySelector('[data-debt-inst-id]').value||uid(),dueDate:row.querySelector('[data-debt-inst-date]').value,amount:parseAmt(row.querySelector('[data-debt-inst-amount]').value),sequence:index+1}));
+    if(plan.some(item=>!item.dueDate||!(item.amount>0))){toast('Add a due date and amount for every installment');return;}
+    if(plan.length>60){toast('A debt can have up to 60 installments');return;}
+    if(Math.abs(sum(plan,item=>item.amount)-amount)>0.005){toast('Installment amounts must add up to the total debt amount');return;}
+  }else{
+    const dueDate=f.elements.dueDate.value;
+    if(!dueDate){toast('Choose a due date');return;}
+    const old=S.debtInstallments.find(item=>item.debtId===f.dataset.id);
+    plan=[{id:old?old.id:uid(),dueDate,amount,sequence:1}];
+  }
+  const oldDebt=S.debts.find(debt=>debt.id===f.dataset.id),debtId=oldDebt?oldDebt.id:uid();
+  if(oldDebt&&amount+0.005<debtPaidAmount(debtId)){toast('Total owed cannot be less than payments already recorded');return;}
+  const retained=new Set(plan.map(item=>item.id));
+  for(const old of S.debtInstallments.filter(item=>item.debtId===debtId)){
+    const paid=debtPaidAmount(debtId,old.id),updated=plan.find(item=>item.id===old.id);
+    if(!updated&&paid>0.005){toast('Remove or reassign recorded payments before removing that installment');return;}
+    if(updated&&updated.amount+0.005<paid){toast('An installment cannot be less than payments already recorded for it');return;}
+  }
+  if(!cloudOK())return;
+  const ops=[{k:'debts',id:debtId,d:{name,medium,amount,installment}}];
+  S.debtInstallments.filter(item=>item.debtId===debtId&&!retained.has(item.id)).forEach(item=>ops.push({k:'debtInstallments',id:item.id,del:true}));
+  plan.forEach(item=>ops.push({k:'debtInstallments',id:item.id,d:{debtId,amount:item.amount,dueDate:item.dueDate,sequence:item.sequence}}));
+  cloud.bulk(ops);closeSheet();toast(oldDebt?'Debt updated':'Debt added');buzz();
+});
+function openDebtPayment(debtId,installmentId){
+  if(!debtTrackingAvailable){toast('Publish the updated Firestore rules before recording debt payments');return;}
+  const debt=S.debts.find(item=>item.id===debtId),schedule=debt&&debtSchedule(debt),item=schedule&&schedule.find(x=>x.id===installmentId);
+  if(!debt||!item||item.remaining<=0.005){toast('This debt payment is no longer due');return;}
+  const f=$('debtPayForm');f.reset();refreshSelects();f.dataset.debtId=debtId;f.dataset.installmentId=installmentId;
+  f.elements.amount.value=fmtAmtInput(Math.min(item.remaining,debtOutstanding(debt)));
+  f.elements.amount.max=Math.min(item.remaining,debtOutstanding(debt));
+  f.elements.wallet.value=defaultWallet();f.elements.date.max=today();f.elements.date.value=today();f.elements.note.value='';
+  $('debtPayInfo').innerHTML=`Payment for <b>${esc(debt.name)}</b> · due ${nice(item.dueDate)} · ${fmt(item.remaining)} remaining on this installment.`;
+  openSheet({title:'Record debt payment',node:f});
+}
+$('debtPayForm').addEventListener('submit',e=>{
+  e.preventDefault();const f=e.target,debt=S.debts.find(item=>item.id===f.dataset.debtId),amount=parseAmt(f.elements.amount.value);
+  if(!debtTrackingAvailable){toast('Publish the updated Firestore rules before recording debt payments');return;}
+  const item=debt&&debtSchedule(debt).find(x=>x.id===f.dataset.installmentId);
+  if(!debt||!item||item.remaining<=0.005){toast('This debt payment is no longer due');return;}
+  if(!(amount>0)){toast('Enter a payment amount');return;}
+  if(amount>item.remaining+0.005||amount>debtOutstanding(debt)+0.005){toast('Payment cannot exceed the remaining debt or installment amount');return;}
+  if(!f.elements.date.value||f.elements.date.value>today()){toast('Choose a payment date no later than today');return;}
+  if(!cloudOK())return;
+  const category='Debt repayment';
+  if(!S.lists.expense.includes(category)){S.lists.expense.push(category);S.budget[category]=0;cMeta();}
+  const note=[`Debt repayment · ${debt.name}`,f.elements.note.value.trim()].filter(Boolean).join(' · ');
+  const record={id:uid(),type:category,amount,date:f.elements.date.value,note,debtId:debt.id,debtInstallmentId:item.id,...srcToFields(f.elements.wallet.value)};
+  cPut('expenses',record);closeSheet();toast('Debt payment recorded',{label:'Undo',fn:()=>{cloud.bulk([{k:'expenses',id:record.id,del:true}]);toast('Payment removed');}});buzz();
+});
 Object.entries(FORMS).forEach(([kind,c])=>{
   const f=$(c.form);
   f.addEventListener('submit',e=>{
@@ -506,6 +659,16 @@ Object.entries(FORMS).forEach(([kind,c])=>{
     if(kind==='expenses'){Object.assign(o,srcToFields(o.src));delete o.src;}
     if(!cloudOK()) return;
     const cur=editing[kind]&&S[kind].find(r=>r.id===editing[kind]);
+    if(kind==='expenses'&&cur&&cur.debtId){
+      if(o.date>today()){toast('Debt repayments cannot be dated in the future');return;}
+      if(o.paidFrom!=='Cash Balance'||isCredit(wById(o.wallet))){toast('Debt repayments must be paid from a non-credit wallet');return;}
+      const debt=S.debts.find(item=>item.id===cur.debtId),installment=debt&&S.debtInstallments.find(item=>item.id===cur.debtInstallmentId);
+      if(debt&&installment){
+        const totalOther=Math.max(0,debtPaidAmount(debt.id)-(+cur.amount||0));
+        const installmentOther=Math.max(0,debtPaidAmount(debt.id,installment.id)-(+cur.amount||0));
+        if(o.amount>debt.amount-totalOther+0.005||o.amount>installment.amount-installmentOther+0.005){toast('Payment cannot exceed the remaining debt or installment amount');return;}
+      }
+    }
     if(!cur&&kind==='bills'){o.created=today();o.skips=[];}
     cPut(kind,cur?{...cur,...o}:{id:uid(),...o});
     closeSheet(); toast(cur?'Changes saved':`${cap(c.noun)} added`); buzz();
@@ -513,13 +676,16 @@ Object.entries(FORMS).forEach(([kind,c])=>{
 });
 function openEdit(kind,id){const rec=(S[kind]||[]).find(r=>r.id===id);if(!rec)return;
   if(kind==='adjustments'){openReconcile(wById(rec.wallet),rec);return;}
+  if(kind==='debts'){openDebtForm(rec);return;}
   if(FORMS[kind]) openForm(kind,rec);}
 function deleteRec(kind,id){
   const rec=(S[kind]||[]).find(r=>r.id===id); if(!rec||!cloudOK()) return;
   const gone=[{k:kind,r:rec}]; if(kind==='goals') S.allocs.filter(a=>a.goal===id).forEach(a=>gone.push({k:'allocs',r:a}));
+  if(kind==='debts') S.debtInstallments.filter(item=>item.debtId===id).forEach(item=>gone.push({k:'debtInstallments',r:item}));
   cloud.bulk(gone.map(g=>({k:g.k,id:g.r.id,del:true}))); buzz();
-  const noun=kind==='adjustments'?'reconciliation':FORMS[kind].noun;
-  toast(`${cap(noun)} deleted${gone.length>1?` (+${gone.length-1} allocation${gone.length>2?'s':''})`:''}`,{label:'Undo',fn:()=>{cloud.bulk(gone.map(g=>{const {id,...d}=g.r;return {k:g.k,id,d:JSON.parse(JSON.stringify(d))};}));toast('Restored');}});
+  const noun=kind==='adjustments'?'reconciliation':kind==='debts'?'debt':FORMS[kind].noun;
+  const related=kind==='debts'?'installment':'allocation';
+  toast(`${cap(noun)} deleted${gone.length>1?` (+${gone.length-1} ${related}${gone.length===2?'':'s'})`:''}`,{label:'Undo',fn:()=>{cloud.bulk(gone.map(g=>{const {id,...d}=g.r;return {k:g.k,id,d:JSON.parse(JSON.stringify(d))};}));toast('Restored');}});
 }
 
 /* ---- wallets ---- */
@@ -634,6 +800,8 @@ document.addEventListener('click',async e=>{
   if((x=c('[data-preset]'))){const cat=x.dataset.preset;openForm('bills',null,{name:cat,category:cat,amount:+S.budget[cat]||''});setTimeout(()=>$('billForm').elements.dueDay.focus(),90);toast('Now set the due day');return;}
   if((x=c('[data-reconcile]'))){openReconcile(wById(x.dataset.reconcile));return;}
   if((x=c('[data-wcard]'))){openWalletForm(wById(x.dataset.wcard));return;}
+  if((x=c('[data-debt-edit]'))){openDebtForm(S.debts.find(debt=>debt.id===x.dataset.debtEdit));return;}
+  if((x=c('[data-debtpay]'))){const [debtId,installmentId]=x.dataset.debtpay.split('|');openDebtPayment(debtId,installmentId);return;}
   if((x=c('[data-gcard]'))){openEdit('goals',x.dataset.gcard);return;}
   if((x=c('[data-ck]'))){const g=x.dataset.ck;if(g==='qa') openQA(); else {go(g); if(g==='settings') setTimeout(()=>$('budCard').scrollIntoView({behavior:'smooth',block:'start'}),60);}return;}
   if(c('[data-ckhide]')){LS.set('fh.ckl','hide');render();toast('Checklist hidden. You can bring it back in Settings.');return;}
@@ -706,7 +874,7 @@ $('fileImport').onchange=e=>{const file=e.target.files[0];if(!file) return;const
     cloud.bulk(ops);$('fMonth').value='';toast('Backup imported – syncing…');buzz();};
   rd.readAsText(file);e.target.value='';};
 $('btnClear').onclick=async()=>{if(!cloudOK())return;
-  if(!await askConfirm({title:'Clear all entries?',msg:'This deletes all income, expenses, savings, goals, allocations, transfers and bills from your cloud account. Settings, wallets and budget are kept. <b>This can\'t be undone</b>, so export a backup first.',ok:'Delete everything',danger:true})) return;
+  if(!await askConfirm({title:'Clear all entries?',msg:'This deletes all income, expenses, savings, goals, allocations, transfers, bills and debt schedules from your cloud account. Settings, wallets and budget are kept. <b>This can\'t be undone</b>, so export a backup first.',ok:'Delete everything',danger:true})) return;
   const ops=[];KINDS.forEach(k=>S[k].forEach(r=>ops.push({k,id:r.id,del:true})));cloud.bulk(ops);toast('Entries cleared');};
 $('btnSignOut').onclick=async()=>{if(await askConfirm({title:'Sign out?',msg:'You\'ll need to sign in with Google again on this device.',ok:'Sign out'})) cloud.signOut();};
 $('authBtn').onclick=()=>{$('authErr').textContent='';if(cloud) cloud.signIn();};
@@ -812,6 +980,7 @@ import('./firebase.js').then(({startFirebase})=>{
     onSignedIn,
     onSignedOut,
     onAdjustmentPermissionDenied,
+    onDebtPermissionDenied,
     setSync,
     showAuthError,
     toast

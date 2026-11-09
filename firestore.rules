@@ -43,10 +43,11 @@ service cloud.firestore {
     match /users/{uid}/expenses/{id} {
       allow read, delete: if isOwner(uid);
       allow create, update: if isOwner(uid)
-        && fields(['type', 'amount', 'date'], ['paidFrom', 'wallet', 'note', 'billId', 'billMonth'])
+        && fields(['type', 'amount', 'date'], ['paidFrom', 'wallet', 'note', 'billId', 'billMonth', 'debtId', 'debtInstallmentId'])
         && label(d().type, 80) && money(d().amount) && isDate(d().date)
         && (!has('paidFrom') || d().paidFrom in ['Cash Balance', 'Goal Funds'])
         && optTxt('wallet', 60) && optTxt('note', 500) && optTxt('billId', 60)
+        && optTxt('debtId', 60) && optTxt('debtInstallmentId', 60)
         && (!has('billMonth') || (d().billMonth is string && d().billMonth.matches('20[0-9]{2}-(0[1-9]|1[0-2])')));
     }
 
@@ -94,6 +95,22 @@ service cloud.firestore {
       allow create, update: if isOwner(uid)
         && fields(['name', 'target'], ['date'])
         && label(d().name, 120) && money(d().target) && optDate('date');
+    }
+
+    match /users/{uid}/debts/{id} {
+      allow read, delete: if isOwner(uid);
+      allow create, update: if isOwner(uid)
+        && fields(['name', 'medium', 'amount', 'installment'], [])
+        && label(d().name, 120) && label(d().medium, 120) && money(d().amount)
+        && d().amount > 0 && d().installment is bool;
+    }
+
+    match /users/{uid}/debtInstallments/{id} {
+      allow read, delete: if isOwner(uid);
+      allow create, update: if isOwner(uid)
+        && fields(['debtId', 'amount', 'dueDate', 'sequence'], [])
+        && label(d().debtId, 60) && money(d().amount) && d().amount > 0
+        && isDate(d().dueDate) && d().sequence is int && d().sequence >= 1 && d().sequence <= 60;
     }
 
     match /users/{uid}/allocs/{id} {

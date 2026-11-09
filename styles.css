@@ -204,6 +204,31 @@ details.sec>summary:hover{color:var(--ink)}
 .gcard .top{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px}
 .gcard b{font-size:15px}
 .gmeta{font-size:12px;color:var(--muted);display:flex;justify-content:space-between;margin-top:6px;gap:8px}
+.debt-card{cursor:default}
+.debt-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;background:var(--card2);border-radius:12px;padding:12px 14px}
+.debt-summary>div{min-width:0}
+.debt-summary span,.debt-dash-list small{display:block;color:var(--muted);font-size:11px}
+.debt-summary b{display:block;font-size:16px;margin-top:3px;overflow-wrap:anywhere}
+.debt-dash-list{margin-top:8px}
+.debt-dash-list>div{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:8px 2px;border-bottom:1px solid var(--line);font-size:13px}
+.debt-dash-list>div:last-child{border-bottom:0}
+.debt-dash-list small{margin-top:2px}
+.debt-card .debt-balance{display:flex;justify-content:space-between;align-items:center;padding:11px 12px;background:var(--emXL);border-radius:10px;color:var(--muted);font-size:12px}
+.debt-card .debt-balance b{font-size:18px;color:var(--ink)}
+.debt-next{display:flex;justify-content:space-between;align-items:center;gap:8px;margin:12px 0;font-size:12px;color:var(--muted)}
+.debt-next b{font-size:15px;color:var(--ink);white-space:nowrap}
+.debt-card>[data-debtpay]{width:100%}
+.debt-plan{margin-top:12px;border-top:1px solid var(--line);padding-top:10px}
+.debt-plan summary{cursor:pointer;color:var(--emT);font-size:12px;font-weight:700}
+.debt-plan-row{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:8px;padding:9px 0;border-bottom:1px solid var(--line)}
+.debt-plan-row>div:first-child{min-width:0}
+.debt-plan-row b{display:block;font-size:12px}
+.debt-plan-row small{display:block;color:var(--muted);font-size:10px}
+.debt-plan-amount{text-align:right}
+.debt-install-input{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) 40px;align-items:end;gap:8px;margin-bottom:10px}
+.debt-install-input label{min-width:0}
+.debt-install-input .ibtn{width:40px;height:40px;font-size:20px}
+.debt-install-input input{min-width:0}
 .ckl .ck{display:flex;align-items:center;gap:12px;padding:11px 2px;border-bottom:1px dashed var(--line);cursor:pointer;font-weight:600}
 .ckl .ck:last-of-type{border-bottom:0}
 .ck i{width:24px;height:24px;border-radius:50%;border:2px solid var(--line);display:grid;place-items:center;flex:none;font-style:normal;font-size:13px;font-weight:800}
@@ -305,6 +330,9 @@ details.sec>summary:hover{color:var(--ink)}
  .goalcards{grid-template-columns:1fr}
  .wcards{grid-template-columns:1fr 1fr}.wcard{padding:13px}.wcard .bal{font-size:17px}.wcard .flows{flex-direction:column;gap:2px}
  .bill{flex-wrap:wrap;align-items:center}.bill .bm{flex:1 1 calc(100% - 44px)}.bill .amt{margin-left:36px}.bill-actions{margin-left:auto}
+ .debt-summary{grid-template-columns:1fr 1fr}.debt-summary>div:last-child{grid-column:1/-1}
+ .debt-plan-row{grid-template-columns:minmax(0,1fr) auto}.debt-plan-row .btn,.debt-plan-row .pill{grid-column:1/-1;justify-self:start}
+ .debt-install-input{grid-template-columns:minmax(0,1fr) minmax(0,1fr) 40px}
  .hc{padding:3px 4px;border-radius:8px;font-size:10px}.hc small{font-size:8px}.heat{gap:4px}
  .brow .bn{flex-basis:42%}.brow .bv{min-width:92px}
  .ov{align-items:flex-end;padding:0}

@@ -34,7 +34,9 @@
     <button title="Wallets" data-tab="wallets"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0 0 4h15v4"/><path d="M3 5v14a2 2 0 0 0 2 2h15v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4z"/></svg>Wallets</button>
     <button title="Savings" data-tab="savings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 7h-1.5A6 6 0 0 0 6 9.5V10a3 3 0 0 0-3 3v1h3a6 6 0 0 0 3 4v2h3v-1h2v1h3v-2.5A6 6 0 0 0 20 12V8a1 1 0 0 0-1-1z"/></svg>Savings</button>
     <button title="Goals" data-tab="goals"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/></svg>Goals</button>
-    <button title="Settings" data-tab="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>Settings</button>
+    <button title="Debts" data-tab="debts"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18M7 15h3"/></svg>Debts</button>
+    <button title="Settings" data-tab="settings">
+<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>Settings</button>
   </nav>
   <div class="side-card">Safe to spend before payday<b id="sideCash">—</b></div>
 </aside>
@@ -63,6 +65,7 @@
   </div>
   <div class="wstrip" id="wStrip"></div>
   <div id="alerts"></div>
+  <div class="card" id="debtDash"></div>
   <div class="grid2">
     <div class="card"><div class="row-between"><h2 id="upTitle">Upcoming bills</h2><button class="ibtn" data-goto="bills">All bills ›</button></div><div id="upBills"></div></div>
     <div class="card"><h2 id="heatTitle">Spending calendar</h2><div id="heatMap"></div></div>
@@ -141,6 +144,14 @@
   <div class="row-between"><div class="sec-title" style="margin:0">Your goals · tap to edit</div><div style="display:flex;gap:8px"><button class="btn sec sm" data-new="allocs">Allocate funds</button><button class="btn sm" data-new="goals">+ Add goal</button></div></div>
   <div id="goalCardsTab" style="margin-bottom:18px"></div>
   <div class="card"><h2>Allocation history</h2><div id="allocList"></div><div class="note">Goal funds come from savings deposits to the “Goal” account. Allocations set them aside for each goal.</div></div>
+</section>
+
+<!-- DEBTS -->
+<section class="tab" id="tab-debts">
+  <div class="kpis" id="kpiDebts"></div>
+  <div class="row-between"><div class="sec-title" style="margin:0">Your debts</div><button class="btn sm" data-new="debts">+ Add debt</button></div>
+  <div class="note">Track what you owe, when payments are due, and your progress as you repay. Payments are logged as wallet expenses.</div>
+  <div id="debtCardsTab" style="margin-bottom:18px"></div>
 </section>
 
 <!-- SETTINGS -->
@@ -306,6 +317,30 @@
     <button class="btn submit" type="submit">Add goal</button>
   </form>
 
+  <form class="entry" id="debtForm" novalidate>
+    <label class="full">Debt name<input name="name" type="text" maxlength="120" placeholder="e.g. Phone installment"></label>
+    <label>From / medium<input name="medium" type="text" maxlength="120" placeholder="e.g. Shopee, credit card, personal loan"></label>
+    <label>Total owed (PHP)<input name="amount" class="amt" type="text" inputmode="decimal" autocomplete="off" placeholder="0.00"></label>
+    <label class="full toggle"><input name="installment" type="checkbox"> This debt is paid in installments</label>
+    <label class="full" id="debtSingleDueRow">Due date<input name="dueDate" type="date"></label>
+    <div class="full hide" id="debtInstallmentWrap">
+      <div id="debtInstallments"></div>
+      <button class="btn sec sm" type="button" data-debt-inst-add>+ Add installment</button>
+      <div class="note">Payment amounts can vary, but must add up to the total owed. Up to 60 installments.</div>
+    </div>
+    <button class="btn submit" type="submit">Add debt</button>
+  </form>
+
+  <form class="entry" id="debtPayForm" novalidate>
+    <div class="note full" id="debtPayInfo" style="margin:0"></div>
+    <label>Payment amount (PHP)<input name="amount" class="amt" type="text" inputmode="decimal" autocomplete="off" placeholder="0.00"></label>
+    <label>Pay from wallet<select name="wallet" class="wsel-cash"></select></label>
+    <label>Date paid<input name="date" type="date"></label>
+    <label>Note (optional)<input name="note" type="text" maxlength="300" placeholder="Optional"></label>
+    <div class="note full" style="margin:0">This creates a Debt repayment expense and reduces the selected wallet balance.</div>
+    <button class="btn submit" type="submit">Record payment</button>
+  </form>
+
   <form class="entry" id="allocForm" novalidate>
     <label class="full">Amount (PHP)<input name="amount" class="amt" type="text" inputmode="decimal" autocomplete="off" placeholder="0.00"></label>
     <label>Goal<select name="goal" id="allocGoal"></select></label>
@@ -335,6 +370,7 @@
     <button data-goto="bills"><span class="ico t-amber"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3h14v18l-3-2-2 2-2-2-2 2-2-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg></span>Bills<span class="nbadge" id="moreBadge" style="display:none"></span></button>
     <button data-goto="savings"><span class="ico t-teal"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 7h-1.5A6 6 0 0 0 6 9.5V10a3 3 0 0 0-3 3v1h3a6 6 0 0 0 3 4v2h3v-1h2v1h3v-2.5A6 6 0 0 0 20 12V8a1 1 0 0 0-1-1z"/></svg></span>Savings</button>
     <button data-goto="goals"><span class="ico t-violet"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/></svg></span>Goals</button>
+    <button data-goto="debts"><span class="ico t-red"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18M7 15h3"/></svg></span>Debts</button>
     <button data-goto="settings"><span class="ico t-navy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></span>Settings</button>
   </div>
 </div>
