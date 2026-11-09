@@ -157,6 +157,13 @@ function upcomingBills(){const t=today(),np=nextPayday(t),T=P(t),out=[],N=new Da
     if(b.created&&x.ym<b.created.slice(0,7)) return;
     out.push({b,...x});}));
   return {np,list:out.sort((a,b)=>a.due.localeCompare(b.due))};}
+function billsNeedingAllotment(){const T=P(today()),N=new Date(T.getFullYear(),T.getMonth()+1,1),out=[];
+  S.bills.filter(b=>b.status!=='Paused').forEach(b=>[[T.getFullYear(),T.getMonth()],[N.getFullYear(),N.getMonth()]].forEach(([y,m])=>{
+    const x=billState(b,y,m);
+    const remaining=Math.max(0,(+b.amount||0)-billAllotment(b,x.ym));
+    if(x.days<0||x.days>5||x.st==='paid'||x.st==='skipped'||(b.created&&x.ym<b.created.slice(0,7))||remaining<=0.005) return;
+    out.push({b,...x,remaining});}));
+  return out.sort((a,b)=>a.due.localeCompare(b.due));}
 function billAllotments(ym=today().slice(0,7)){
   const [y,month]=ym.split('-').map(Number),m=month-1,out={};
   S.bills.forEach(b=>{
@@ -169,7 +176,6 @@ function billAllotments(ym=today().slice(0,7)){
   return out;
 }
 const billAllotted=(wallet,ym)=>billAllotments(ym)[wallet]||0;
-const billAmountRemaining=x=>Math.max(0,(+x.b.amount||0)-billAllotment(x.b,x.ym));
 function dueLabel(x){return x.st==='overdue'?`<small class="due-over">Overdue · ${short(P(x.due))}</small>`:x.days===0?`<small class="due-soon">Due today</small>`:x.days===1?`<small class="due-soon">Due tomorrow · ${short(P(x.due))}</small>`:`<small class="${x.st==='soon'?'due-soon':'due-ok'}">In ${x.days} days · ${short(P(x.due))}</small>`;}
 const ordinal=n=>{const s=['th','st','nd','rd'],v=n%100;return n+(s[(v-20)%10]||s[v]||s[0]);};
 
@@ -308,14 +314,14 @@ function renderDash(){
   document.querySelectorAll('#pSeg button').forEach(x=>x.classList.toggle('on',x.dataset.period===view));
   $('periodHead').textContent=`${view==='Full Month'?mLabel(month):`${short(P(a))} – ${short(P(b))}`} · selected period`;
   const now=balances(), p=periodStats(a,b), goalFundsAlloc=sum(S.allocs);
-  const ub=upcomingBills(), ubTotal=sum(ub.list,x=>+x.b.amount||0),ubRemaining=sum(ub.list,billAmountRemaining);
+  const ub=upcomingBills(), ubTotal=sum(ub.list,x=>+x.b.amount||0);
   const reserved=now.cash-now.availableCash;
-  const days=Math.max(1,Math.round((P(ub.np)-P(t))/864e5)), avail=now.availableCash-ubRemaining;
+  const days=Math.max(1,Math.round((P(ub.np)-P(t))/864e5));
   const nCash=S.wallets.filter(w=>!isCredit(w)).length;
   const npL=short(P(ub.np)), dl=`${days} day${days===1?'':'s'}`;
-  const status=avail>=0
-    ?`<div class="hm-status ok"><span class="si">${svgI(IC.check,2.4)}</span><div class="st"><b>${fmt(avail/days)} <span>/ day</span></b>safe to spend for ${dl} until payday (${npL})${ubRemaining?` · after ${fmt(ubRemaining)} still needed for bills`:''}</div></div>`
-    :`<div class="hm-status short"><span class="si">${svgI(IC.alert,2.2)}</span><div class="st"><b>${fmt(-avail)} <span>short</span></b>${ubRemaining?`Bills due before payday (${npL}) still need ${fmt(ubRemaining)} beyond their allotments.`:'Your available wallet balances are below zero.'}</div>${ubRemaining?'<button class="sbtn" data-goto="bills">View bills</button>':''}</div>`;
+  const status=now.availableCash>=0
+    ?`<div class="hm-status ok"><span class="si">${svgI(IC.check,2.4)}</span><div class="st"><b>${fmt(now.availableCash/days)} <span>/ day</span></b>safe to spend for ${dl} until payday (${npL})</div></div>`
+    :`<div class="hm-status short"><span class="si">${svgI(IC.alert,2.2)}</span><div class="st"><b>${fmt(-now.availableCash)} <span>below zero</span></b>Your available wallet balances are below zero.</div></div>`;
   $('heroMain').innerHTML=`<div class="hm-top"><div class="l">Money in hand</div><div class="v">${fmt(now.availableCash)}</div><div class="s">Across ${nCash} wallet${nCash===1?'':'s'}${reserved>0.005?` · ${fmt(reserved)} allotted to bills`:''}${now.owed>0.005?' · excludes credit cards':''}</div></div>
     ${status}
     <div class="hm-stats"><div><span>Net worth</span><b>${fmt(now.cash+now.totalSav-now.owed)}</b></div>${now.owed>0.005?`<div><span>Card owed</span><b>${fmt(now.owed)}</b></div>`:`<div><span>Total savings</span><b>${fmt(now.totalSav)}</b></div>`}<div><span>Bills before payday</span><b>${fmt(ubTotal)}</b></div></div>`;
@@ -331,6 +337,7 @@ function renderDash(){
   // alerts
   const al=[];
   ub.list.filter(x=>x.st==='overdue').forEach(x=>al.push(`<div class="alert bad"><span><b>${esc(x.b.name)}</b> was due ${nice(x.due)} and isn't marked paid.</span></div>`));
+  billsNeedingAllotment().forEach(x=>al.push(`<div class="alert warn"><span>${billAllotment(x.b,x.ym)?`You still have ${fmt(x.remaining)} left to allot for <b>${esc(x.b.name)}</b>`:`You did not allot money for <b>${esc(x.b.name)}</b> yet; ${fmt(x.remaining)} remains to allot`} before its due date (${nice(x.due)}).</span><button class="btn sm abtn" data-goto="bills">Allot money</button></div>`));
   S.lists.expense.forEach(c=>{const bd=+S.budget[c]||0, sp=sum(monthExp.filter(e=>e.type===c));
     if(bd>0&&sp>bd) al.push(`<div class="alert bad"><span><b>${esc(c)}</b> is over budget by ${fmt(sp-bd)} this month.</span></div>`);
     else if(bd>0&&sp>=bd*0.8) al.push(`<div class="alert warn"><span><b>${esc(c)}</b> has used ${pct(sp/bd)} of its budget.</span></div>`);});
@@ -395,8 +402,8 @@ function renderUpcoming(ub){
   const el=$('upBills');
   if(!S.bills.length){el.innerHTML=emptyState('bill','No recurring bills yet','Add rent, internet and utilities to see what\'s due before payday.','<button class="btn sec sm" data-goto="bills">Set up bills</button>');return;}
   if(!ub.list.length){el.innerHTML=`<div class="alert good" style="margin:0"><span>All bills before payday are paid. Nice!</span></div>`;return;}
-  const tot=sum(ub.list,x=>+x.b.amount||0), after=balances().availableCash-sum(ub.list,billAmountRemaining);
-  el.innerHTML=`<div class="billsum"><div>Due before payday<b>${fmt(tot)}</b></div><div style="text-align:right">Money in hand after bills<b class="${after<0?'neg':''}">${fmt(after)}</b></div></div>`+
+  const tot=sum(ub.list,x=>+x.b.amount||0), after=balances().availableCash;
+  el.innerHTML=`<div class="billsum"><div>Due before payday<b>${fmt(tot)}</b></div><div style="text-align:right">Safe to spend before payday<b class="${after<0?'neg':''}">${fmt(after)}</b></div></div>`+
     ub.list.map(x=>{const allot=billAllotmentData(x.b,x.ym);return `<div class="bill">${catIcon('expense',x.b.category)}<div class="bm"><b>${esc(x.b.name)}</b>${dueLabel(x)}${allot.amount?`<small class="bill-allotment">Allotted ${fmt(allot.amount)} from ${esc(wName(allot.wallet))}</small>`:''}</div><span class="amt">${fmt(x.b.amount)}</span><button class="btn sm" data-billpay="${x.b.id}|${x.ym}">Pay</button></div>`;}).join('');
 }
 let heatSel=null;
