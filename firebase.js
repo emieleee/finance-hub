@@ -19,11 +19,11 @@ const firebaseConfig = {
   appId: '1:1021154150665:web:d5c448472f9d23f0d66bd8'
 };
 
-const KINDS = ['income', 'expenses', 'savings', 'goals', 'allocs', 'transfers', 'bills', 'adjustments'];
+const KINDS = ['income', 'expenses', 'savings', 'goals', 'allocs', 'transfers', 'bills', 'adjustments', 'debts', 'debtInstallments'];
 
 export function startFirebase(callbacks) {
   const {
-    onData, onMeta, onSignedIn, onSignedOut, onAdjustmentPermissionDenied,
+    onData, onMeta, onSignedIn, onSignedOut, onAdjustmentPermissionDenied, onDebtPermissionDenied,
     setSync, showAuthError, toast
   } = callbacks;
   const app = initializeApp(firebaseConfig);
@@ -53,6 +53,7 @@ export function startFirebase(callbacks) {
   let pending = {};
   let denied = false;
   let adjustmentsDenied = false;
+  let debtCollectionsDenied = false;
   const fail = error => {
     console.error(error);
     toast('Sync error: ' + (error.code || error.message));
@@ -80,6 +81,7 @@ export function startFirebase(callbacks) {
     uid = user.uid;
     denied = false;
     adjustmentsDenied = false;
+    debtCollectionsDenied = false;
     onSignedIn(user);
     const listenerFailure = (error, kind) => {
       if (error.code === 'permission-denied' && kind === 'adjustments') {
@@ -88,6 +90,13 @@ export function startFirebase(callbacks) {
         console.warn('Wallet reconciliation is unavailable because Firestore rules do not allow the adjustments collection.');
         onData('adjustments', []);
         onAdjustmentPermissionDenied();
+      } else if (error.code === 'permission-denied' && ['debts', 'debtInstallments'].includes(kind)) {
+        if (!debtCollectionsDenied) {
+          debtCollectionsDenied = true;
+          console.warn('Debt tracking is unavailable because Firestore rules do not allow the debt collections.');
+          onDebtPermissionDenied();
+        }
+        onData(kind, []);
       } else if (error.code === 'permission-denied') {
         if (denied) return;
         denied = true;

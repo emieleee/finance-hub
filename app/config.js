@@ -3,4 +3,4 @@ export const FH_CONFIG = {
   recaptchaSiteKey: '6Ld1-BEuAAAAACuATBAA7uQ3VEFwfGpW4tVvIsUx'
 };
 
-export const APP_VERSION = '3.2';
+export const APP_VERSION = '3.3';

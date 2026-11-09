@@ -34,6 +34,8 @@ The page has a pre-paint script and a module entry point:
 4. **`app/utils.js` and `app/config.js`.** Hold shared pure formatting/date helpers and explicit application configuration.
 5. **`firebase.js` Firebase client** (SDK 10.12.2 from gstatic). The app dynamically imports it and calls `startFirebase(callbacks)`. It sets up App Check, Auth (Google popup with redirect fallback), Firestore and persistent local cache, and returns the persistence/auth API rather than assigning `window.FB`. A permission-denied error for the owner data signs the user out; an adjustments permission error is reported to the app callback.
 
+The Goals and Debts sections are separate pages. Debts has its own sidebar icon beside Goals on desktop and a separate entry in the mobile More menu.
+
 ## Data model (Firestore)
 
 The doc id is the record id (`uid()`). Records are stored **without** an `id` field; it's added on read.
@@ -45,12 +47,14 @@ users/{uid}/meta/state   { settings, lists, budget, wallets[] }
   lists: { expense[], income[], savings[] }   ("Salary" and "Goal" are required)
   budget: { [expenseCategory]: number }
   wallets: [{ id, name, type: 'cash'|'ewallet'|'bank'|'credit', start }]   (credit start = amount owed)
-users/{uid}/expenses/{id}  type, amount, date, paidFrom('Cash Balance'|'Goal Funds'), wallet, note, billId?, billMonth?('YYYY-MM')
+users/{uid}/expenses/{id}  type, amount, date, paidFrom('Cash Balance'|'Goal Funds'), wallet, note, billId?, billMonth?('YYYY-MM'), debtId?, debtInstallmentId?
 users/{uid}/income/{id}    type, amount, date(''=pending), wallet, desc, covStart, covEnd, adjPay, note
 users/{uid}/savings/{id}   action('Deposit'|'Withdrawal'), account, amount, date, wallet, note
 users/{uid}/transfers/{id} from, to, amount, date, note
 users/{uid}/bills/{id}     name, category, amount, dueDay(number 1-31), src(wallet id or '__goal'), status('Active'|'Paused'), created, skips['YYYY-MM']
 users/{uid}/goals/{id}     name, target, date
+users/{uid}/debts/{id}     name, medium, amount, installment(boolean)
+users/{uid}/debtInstallments/{id} debtId, amount, dueDate, sequence
 users/{uid}/allocs/{id}    goal(goal id), amount, date, note
 ```
 
@@ -61,6 +65,7 @@ Key rules of the domain:
 - **Money in hand** is the sum of non-credit wallet balances.
 - **Credit card purchases** don't reduce cash. Paying the card is a transfer *to* the credit wallet.
 - **Goal-funded expenses** (`paidFrom: 'Goal Funds'`) reduce Goal Funds, not wallets.
+- **Debt repayments** are logged as `Debt repayment` expenses linked to a debt and scheduled payment; they reduce the selected wallet balance.
 - **Paydays** are the 15th and the 30th (or month end if shorter). Pay periods: 1st–14th, 15th–payday eve, payday–14th.
 - **Records without a `wallet`** (legacy) count against `defaultWallet()`, the first non-credit wallet.
 
@@ -87,7 +92,7 @@ Key rules of the domain:
 
 **Live:**
 - **Setup:** email-locked rules, real-time sync, offline mode.
-- **Money:** wallets and transfers, recurring bills with reminders, quick-add.
+- **Money:** wallets and transfers, recurring bills with reminders, quick-add, debt tracking with variable installment schedules and wallet-linked repayments.
 - **Insights:** spending calendar, safe-to-spend, vs-last-month comparison.
 - **Activity:** feed with search and swipe, undo.
 - **Polish:** dark mode, setup checklist.

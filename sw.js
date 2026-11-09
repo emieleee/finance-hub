@@ -4,7 +4,7 @@
      the page shows "New version available – tap to refresh".
    - Caches the Firebase and Chart.js libraries so offline cold starts work.
    Your financial data is NOT cached here – Firebase keeps its own offline copy. */
-const SHELL_CACHE = 'fh-shell-v6';
+const SHELL_CACHE = 'fh-shell-v7';
 const LIB_CACHE = 'fh-libs-v1';
 const META_CACHE = 'fh-meta';
 const APP_MODULES = ['./app/config.js', './app/utils.js', './app/finance.js'];
