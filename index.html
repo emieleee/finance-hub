@@ -320,13 +320,14 @@
   <form class="entry" id="debtForm" novalidate>
     <label class="full">Debt name<input name="name" type="text" maxlength="120" placeholder="e.g. Phone installment"></label>
     <label>From / medium<input name="medium" type="text" maxlength="120" placeholder="e.g. Shopee, credit card, personal loan"></label>
-    <label>Total owed (PHP)<input name="amount" class="amt" type="text" inputmode="decimal" autocomplete="off" placeholder="0.00"></label>
+    <label id="debtAmountRow">Total owed (PHP)<input name="amount" class="amt" type="text" inputmode="decimal" autocomplete="off" placeholder="0.00"></label>
     <label class="full toggle"><input name="installment" type="checkbox"> This debt is paid in installments</label>
     <label class="full" id="debtSingleDueRow">Due date<input name="dueDate" type="date"></label>
     <div class="full hide" id="debtInstallmentWrap">
+      <div class="debt-total-summary"><span>Total owed · sum of installments</span><b id="debtInstallmentTotal">₱0.00</b></div>
       <div id="debtInstallments"></div>
       <button class="btn sec sm" type="button" data-debt-inst-add>+ Add installment</button>
-      <div class="note">Payment amounts can vary, but must add up to the total owed. Up to 60 installments.</div>
+      <div class="note">Total owed updates automatically from each installment amount. Up to 60 installments.</div>
     </div>
     <button class="btn submit" type="submit">Add debt</button>
   </form>

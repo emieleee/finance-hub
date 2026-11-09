@@ -553,8 +553,15 @@ function setDebtInstallmentInputs(items){
 function syncDebtInstallmentMode(){
   const f=$('debtForm'),on=f.elements.installment.checked;
   $('debtSingleDueRow').classList.toggle('hide',on);
+  $('debtAmountRow').classList.toggle('hide',on);
   $('debtInstallmentWrap').classList.toggle('hide',!on);
   if(on&&!$('debtInstallments').children.length) setDebtInstallmentInputs([{},{}]);
+  updateDebtInstallmentTotal();
+}
+function updateDebtInstallmentTotal(){
+  const amounts=[...$('debtInstallments').querySelectorAll('[data-debt-inst-amount]')]
+    .map(input=>parseAmt(input.value));
+  $('debtInstallmentTotal').textContent=fmt(sum(amounts,value=>value));
 }
 function openDebtForm(rec){
   if(!debtTrackingAvailable){toast('Publish the updated Firestore rules before adding or editing debts');return;}
@@ -572,22 +579,25 @@ function openDebtForm(rec){
   if(!rec&&!matchMedia('(pointer:coarse)').matches) setTimeout(()=>f.elements.name.focus(),60);
 }
 $('debtForm').elements.installment.addEventListener('change',syncDebtInstallmentMode);
+$('debtForm').addEventListener('input',e=>{
+  if(e.target.matches('[data-debt-inst-amount]')) updateDebtInstallmentTotal();
+});
 $('debtInstallmentWrap').addEventListener('click',e=>{
   if(e.target.closest('[data-debt-inst-add]')){
     const rows=[...$('debtInstallments').querySelectorAll('.debt-install-input')];
     if(rows.length>=60){toast('A debt can have up to 60 installments');return;}
     const items=rows.map(row=>({id:row.querySelector('[data-debt-inst-id]').value,dueDate:row.querySelector('[data-debt-inst-date]').value,amount:parseAmt(row.querySelector('[data-debt-inst-amount]').value)}));
-    items.push({});setDebtInstallmentInputs(items);return;
+    items.push({});setDebtInstallmentInputs(items);updateDebtInstallmentTotal();return;
   }
   const remove=e.target.closest('[data-debt-inst-remove]');
-  if(remove){remove.closest('.debt-install-input').remove();[...$('debtInstallments').querySelectorAll('.debt-install-input')].forEach((row,index)=>{row.querySelector('label').firstChild.textContent=`Payment ${index+1} due`;});}
+  if(remove){remove.closest('.debt-install-input').remove();[...$('debtInstallments').querySelectorAll('.debt-install-input')].forEach((row,index)=>{row.querySelector('label').firstChild.textContent=`Payment ${index+1} due`;});updateDebtInstallmentTotal();}
 });
 $('debtForm').addEventListener('submit',e=>{
-  e.preventDefault();const f=e.target,name=f.elements.name.value.trim(),medium=f.elements.medium.value.trim(),amount=parseAmt(f.elements.amount.value);
+  e.preventDefault();const f=e.target,name=f.elements.name.value.trim(),medium=f.elements.medium.value.trim();
   if(!name){toast('Enter a debt name');return;}
   if(!medium){toast('Enter where the debt is from');return;}
-  if(!(amount>0)){toast('Enter the total amount owed');return;}
   const installment=f.elements.installment.checked;
+  let amount=parseAmt(f.elements.amount.value);
   let plan;
   if(installment){
     const rows=[...$('debtInstallments').querySelectorAll('.debt-install-input')];
@@ -595,8 +605,9 @@ $('debtForm').addEventListener('submit',e=>{
     plan=rows.map((row,index)=>({id:row.querySelector('[data-debt-inst-id]').value||uid(),dueDate:row.querySelector('[data-debt-inst-date]').value,amount:parseAmt(row.querySelector('[data-debt-inst-amount]').value),sequence:index+1}));
     if(plan.some(item=>!item.dueDate||!(item.amount>0))){toast('Add a due date and amount for every installment');return;}
     if(plan.length>60){toast('A debt can have up to 60 installments');return;}
-    if(Math.abs(sum(plan,item=>item.amount)-amount)>0.005){toast('Installment amounts must add up to the total debt amount');return;}
+    amount=sum(plan,item=>item.amount);
   }else{
+    if(!(amount>0)){toast('Enter the total amount owed');return;}
     const dueDate=f.elements.dueDate.value;
     if(!dueDate){toast('Choose a due date');return;}
     const old=S.debtInstallments.find(item=>item.debtId===f.dataset.id);
