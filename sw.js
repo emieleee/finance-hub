@@ -1,17 +1,18 @@
 /* Finance Hub service worker
    - Opens instantly and works offline (app shell is cached).
-   - Checks for newer app files (index.html, styles.css, app.js, firebase.js) in the background; when any changes,
+   - Checks for newer app files and local modules in the background; when any changes,
      the page shows "New version available – tap to refresh".
    - Caches the Firebase and Chart.js libraries so offline cold starts work.
    Your financial data is NOT cached here – Firebase keeps its own offline copy. */
-const SHELL_CACHE = 'fh-shell-v5';
+const SHELL_CACHE = 'fh-shell-v6';
 const LIB_CACHE = 'fh-libs-v1';
 const META_CACHE = 'fh-meta';
-const SHELL = ['./', './index.html', './styles.css', './app.js', './firebase.js', './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png', './icons/icon-maskable-512.png', './icons/apple-touch-icon.png', './icons/favicon-32.png'];
+const APP_MODULES = ['./app/config.js', './app/utils.js', './app/finance.js'];
+const SHELL = ['./', './index.html', './styles.css', './app.js', './firebase.js', ...APP_MODULES, './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png', './icons/icon-maskable-512.png', './icons/apple-touch-icon.png', './icons/favicon-32.png'];
 const LIB_HOSTS = ['cdn.jsdelivr.net', 'www.gstatic.com'];
 const PAGE_KEY = new URL('./index.html', self.registration.scope).href;
 // App code files checked for updates (any change shows the update banner).
-const CODE_FILES = ['./index.html', './styles.css', './app.js', './firebase.js'].map(p => new URL(p, self.registration.scope).href);
+const CODE_FILES = ['./index.html', './styles.css', './app.js', './firebase.js', ...APP_MODULES].map(p => new URL(p, self.registration.scope).href);
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(SHELL_CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));

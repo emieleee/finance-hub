@@ -1,11 +1,9 @@
-/* ================= CONFIG =================
-   Paste your keys between the quotes (see the Phase 3 setup guide).
-   Leave a value empty to keep that feature switched off. */
-window.FH_CONFIG={
-  googleClientId:'',      // Google Drive backups – OAuth "Web client" ID, ends with .apps.googleusercontent.com
-  recaptchaSiteKey:'6Ld1-BEuAAAAACuATBAA7uQ3VEFwfGpW4tVvIsUx'     // Firebase App Check – reCAPTCHA Enterprise (Fraud Defense) Web key ID
-};
-const APP_VERSION='3.2';
+import {APP_VERSION, FH_CONFIG} from './app/config.js';
+import {createFinance, payCycle, periodRange, stdPayday, timing} from './app/finance.js';
+import {
+  P, cap, eom, esc, fmt, fmtAmtInput, inR, isCash, iso, nice, parseAmt, pct, short, sum, today
+} from './app/utils.js';
+
 /* ================= STATE ================= */
 const $=id=>document.getElementById(id);
 const uid=()=>(crypto.randomUUID?crypto.randomUUID().replace(/-/g,'').slice(0,16):Math.random().toString(36).slice(2,14));
@@ -20,223 +18,62 @@ const EMPTY=()=>{const d=new Date();return {
   },
   budget:{},wallets:defaultWallets(0),income:[],expenses:[],savings:[],goals:[],allocs:[],transfers:[],bills:[],adjustments:[]};};
 let S=EMPTY(), userName='', userEmail='';
+let cloud=null;
+const finance=createFinance(()=>S);
+const {
+  billAllotment, billAllotmentData, billAllotmentSummary, billAllotted,
+  billState, billsNeedingAllotment, balances, defaultWallet, goalStats,
+  isCredit, monthsList, nextPayday, periodStats, srcOf, srcToFields, upcomingBills, wById,
+  wFlows, walletBal, wOf
+}=finance;
 let adjustmentsAvailable=true;
 const LS={get:(k,d)=>{try{const v=localStorage.getItem(k);return v===null?d:v;}catch(_){return d;}},set:(k,v)=>{try{localStorage.setItem(k,v);}catch(_){}}};
 let loaded=new Set(), ready=false, readyTimer=null;
 function markLoaded(k){if(ready) return; loaded.add(k); if(loaded.size>=KINDS.length+1) setReady();}
 function setReady(){if(ready) return; ready=true; clearTimeout(readyTimer); document.body.classList.remove('loading'); schedule();}
-/* ---- cloud write helpers (FB comes from the Firebase module) ---- */
-const cloudOK=()=>{if(!window.FB||!window.FB.uid()){toast('Not signed in');return false;}return true;};
-function cPut(kind,rec){if(!cloudOK())return;const {id,...d}=rec;FB.put(kind,id,JSON.parse(JSON.stringify(d)));}
-function cMeta(){if(!cloudOK())return;FB.putMeta(JSON.parse(JSON.stringify({settings:S.settings,lists:S.lists,budget:S.budget,wallets:S.wallets})));}
+/* ---- cloud write helpers ---- */
+const cloudOK=()=>{if(!cloud||!cloud.uid()){toast('Not signed in');return false;}return true;};
+function cPut(kind,rec){if(!cloudOK())return;const {id,...d}=rec;cloud.put(kind,id,JSON.parse(JSON.stringify(d)));}
+function cMeta(){if(!cloudOK())return;cloud.putMeta(JSON.parse(JSON.stringify({settings:S.settings,lists:S.lists,budget:S.budget,wallets:S.wallets})));}
 /* ---- cloud read hooks ---- */
 let _rq=0;function schedule(){if(_rq)return;_rq=requestAnimationFrame(()=>{_rq=0;render();});}
-window.onData=(k,rows)=>{S[k]=rows;markLoaded(k);schedule();};
-window.onAdjustmentPermissionDenied=()=>{adjustmentsAvailable=false;schedule();toast('Wallet reconciliation is unavailable until the updated Firestore rules are published.');};
-window.onMeta=m=>{const d=EMPTY();S.settings={...d.settings,...(m&&m.settings||{})};S.lists=(m&&m.lists)||d.lists;S.budget=(m&&m.budget)||{};
+function onData(k,rows){S[k]=rows;markLoaded(k);schedule();}
+function onAdjustmentPermissionDenied(){adjustmentsAvailable=false;schedule();toast('Wallet reconciliation is unavailable until the updated Firestore rules are published.');}
+function onMeta(m){const d=EMPTY();S.settings={...d.settings,...(m&&m.settings||{})};S.lists=(m&&m.lists)||d.lists;S.budget=(m&&m.budget)||{};
   S.wallets=(m&&Array.isArray(m.wallets)&&m.wallets.length)?m.wallets:defaultWallets(m&&m.settings&&m.settings.startCash);markLoaded('meta');schedule();};
-window.setSync=st=>{const el=$('syncBadge');if(!el)return;el.className='sync '+st;el.innerHTML='<i></i>'+({synced:'Synced',saving:'Saving…',offline:'Offline – will sync'}[st]);};
-window.onSignedIn=u=>{adjustmentsAvailable=true;$('auth').classList.add('hide');
+function setSync(st){const el=$('syncBadge');if(!el)return;el.className='sync '+st;el.innerHTML='<i></i>'+({synced:'Synced',saving:'Saving…',offline:'Offline – will sync'}[st]);}
+function onSignedIn(u){adjustmentsAvailable=true;$('auth').classList.add('hide');
   userName=((u.displayName||'').trim().split(/\s+/)[0])||'';userEmail=u.email||'';
   loaded=new Set();ready=false;document.body.classList.add('loading');clearTimeout(readyTimer);readyTimer=setTimeout(setReady,8000);
   const av=u.photoURL?`<img src="${esc(u.photoURL)}" alt="" referrerpolicy="no-referrer">`:esc((u.displayName||u.email||'?')[0].toUpperCase());
   $('topRight').innerHTML=`<div class="syncrow"><span class="sync offline" id="syncBadge"><i></i>Connecting…</span><div class="avatar" title="${esc(u.email||'')}">${av}</div></div>`;
-  $('acctAv').innerHTML=av;$('acctEmail').textContent=u.email||u.displayName||'';render();};
-window.onSignedOut=()=>{S=EMPTY();ready=false;closeSheet();render();$('topRight').innerHTML='';$('auth').classList.remove('hide');
+  $('acctAv').innerHTML=av;$('acctEmail').textContent=u.email||u.displayName||'';render();}
+function onSignedOut(){S=EMPTY();ready=false;closeSheet();render();$('topRight').innerHTML='';$('auth').classList.remove('hide');
   $('authLoading').style.display='none';$('authBtn').style.display='';};
-window.showAuthError=e=>{$('authLoading').style.display='none';$('authBtn').style.display='';
+function showAuthError(e){$('authLoading').style.display='none';$('authBtn').style.display='';
   $('authErr').textContent=e.code==='auth/unauthorized-domain'?'This site address is not authorized in Firebase (Authentication → Settings → Authorized domains).':(e.code?'Sign-in failed: '+e.code:e.message);};
-setTimeout(()=>{if(!window.FB) window.showAuthError({message:'Could not load the sync service. Check your internet connection and reload.'});},12000);
 
 /* ================= HELPERS ================= */
-const peso=new Intl.NumberFormat('en-PH',{style:'currency',currency:'PHP',minimumFractionDigits:2});
-const fmt=v=>peso.format(+v||0);
-const pct=v=>((+v||0)*100).toFixed(1)+'%';
-const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const pad=n=>String(n).padStart(2,'0');
-const iso=d=>`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
-const P=s=>{const [y,m,d]=s.split('-').map(Number);return new Date(y,m-1,d);};
-const today=()=>iso(new Date());
-const eom=(y,m)=>new Date(y,m+1,0);
-const payday30=(y,m)=>{const e=eom(y,m).getDate();return new Date(y,m,Math.min(30,e));};
-const inR=(d,a,b)=>d&&d>=a&&d<=b;
-const sum=(arr,f=x=>x.amount)=>arr.reduce((t,x)=>t+(+f(x)||0),0);
-const nice=s=>s?P(s).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'';
-const short=d=>d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
-const cap=s=>s.charAt(0).toUpperCase()+s.slice(1);
-const isCash=e=>e.paidFrom!=='Goal Funds';
-const savSigned=s=>s.action==='Deposit'?+s.amount:-s.amount;
-const parseAmt=v=>+String(v??'').replace(/[^\d.]/g,'')||0;
-function fmtAmtInput(v){let s=String(v??'').replace(/[^\d.]/g,'');if(s==='')return '';const i=s.indexOf('.');if(i>=0)s=s.slice(0,i+1)+s.slice(i+1).replace(/\./g,'');
-  let [a,b]=s.split('.');a=(a||'').replace(/^0+(?=\d)/,'');const ai=a?Number(a).toLocaleString('en-US'):'0';return b!==undefined?ai+'.'+b.slice(0,2):ai;}
 const buzz=()=>{try{navigator.vibrate&&navigator.vibrate(12);}catch(_){}};
 function toast(m,act){const t=$('toast');t.innerHTML=`<span>${esc(m)}</span>`+(act?`<button class="tact">${esc(act.label)}</button>`:'');
   t.classList.toggle('has',!!act);t.classList.add('show');if(act) t.querySelector('.tact').onclick=()=>{t.classList.remove('show');act.fn();};
   clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),act?6000:2200);}
 const cssv=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 
-/* ---- derived fields (mirror the workbook formulas) ---- */
-function payCycle(r){
-  if(!r.covStart||!r.covEnd) return '';
-  const a=P(r.covStart),b=P(r.covEnd);
-  if(a.getDate()===1&&b.getDate()===15) return '1st-15th';
-  if(b.getDate()===eom(b.getFullYear(),b.getMonth()).getDate()) return '16th-Month End';
-  return 'Custom / Partial';
-}
-function stdPayday(r){
-  const c=payCycle(r); if(!c||!r.covEnd) return '';
-  const b=P(r.covEnd);
-  if(c==='1st-15th') return iso(new Date(b.getFullYear(),b.getMonth(),15));
-  if(c==='16th-Month End') return iso(payday30(b.getFullYear(),b.getMonth()));
-  return '';
-}
-function timing(r){
-  if(!r.date) return 'Pending';
-  const sp=stdPayday(r), due=r.adjPay||sp;
-  if(!due) return 'Unscheduled';
-  if(r.date<due) return 'Paid Early';
-  if(r.date>due) return 'Paid Late';
-  if(r.adjPay&&sp&&r.adjPay<sp) return 'Adjusted Early';
-  if(r.adjPay&&sp&&r.adjPay>sp) return 'Adjusted Late';
-  return r.adjPay?'On Adjusted Date':'On Time';
-}
-function periodRange(monthStr,view){
-  const d=P(monthStr),y=d.getFullYear(),m=d.getMonth();
-  const p30=payday30(y,m);
-  switch(view){
-    case '1st-14th': return [iso(new Date(y,m,1)),iso(new Date(y,m,14))];
-    case '15th-Payday Eve': return [iso(new Date(y,m,15)),iso(new Date(p30.getTime()-864e5))];
-    case 'Payday-14th': return [iso(p30),iso(new Date(y,m+1,14))];
-    default: return [iso(new Date(y,m,1)),iso(eom(y,m))];
-  }
-}
 /* ---- wallets ---- */
-const isCredit=w=>!!w&&w.type==='credit';
-const defaultWallet=()=>{const w=S.wallets.find(w=>!isCredit(w))||S.wallets[0];return w?w.id:'';};
-const wById=id=>S.wallets.find(w=>w.id===id);
-const wOf=r=>(r&&r.wallet&&wById(r.wallet))?r.wallet:defaultWallet();
-function wFlows(w,a,b,excludeAdjustmentId){const id=w.id;
-  const inc=sum(S.income.filter(r=>wOf(r)===id&&inR(r.date,a,b)));
-  const exp=sum(S.expenses.filter(e=>isCash(e)&&wOf(e)===id&&inR(e.date,a,b)));
-  const dep=sum(S.savings.filter(r=>r.action==='Deposit'&&wOf(r)===id&&inR(r.date,a,b)));
-  const wd=sum(S.savings.filter(r=>r.action==='Withdrawal'&&wOf(r)===id&&inR(r.date,a,b)));
-  const tin=sum(S.transfers.filter(t=>t.to===id&&inR(t.date,a,b))), tout=sum(S.transfers.filter(t=>t.from===id&&inR(t.date,a,b)));
-  const adjustment=sum(S.adjustments.filter(r=>r.wallet===id&&r.id!==excludeAdjustmentId&&inR(r.date,a,b)),r=>r.delta);
-  return {in:inc+wd+tin,out:exp+dep+tout,adjustment};}
-function walletBal(w,end,excludeAdjustmentId){const f=wFlows(w,S.settings.startDate,end||today(),excludeAdjustmentId);return (isCredit(w)?-(+w.start||0):(+w.start||0))+f.in-f.out+f.adjustment;}
-const srcOf=r=>r.paidFrom==='Goal Funds'?'__goal':wOf(r);
-function srcToFields(src){return src==='__goal'?{paidFrom:'Goal Funds',wallet:''}:{paidFrom:'Cash Balance',wallet:src||defaultWallet()};}
 const WI={cash:'<rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 12h.01M18 12h.01"/>',ewallet:'<rect x="6" y="2" width="12" height="20" rx="2.5"/><path d="M11 18h2"/>',bank:'<path d="M3 10h18L12 4z"/><path d="M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 21h18"/>',credit:'<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20M6 15h4"/>',goal:'<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/>'};
 const WTYPE={cash:'Cash',ewallet:'E-wallet',bank:'Bank',credit:'Credit card'};
 function wColor(id){const i=S.wallets.findIndex(w=>w.id===id);return ['#10B981','#0EA5E9','#22C55E','#6366F1','#EF4444','#8B5CF6','#F59E0B','#14B8A6','#EC4899','#64748B'][(i<0?0:i)%10];}
 const svgI=(d,sw=2)=>`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
 function wIcon(id){const w=wById(id);const t=id==='__goal'?'goal':(w?w.type:'cash');const c=id==='__goal'?'#8B5CF6':wColor(id);return `<span class="cico" style="--c:${c}">${svgI(WI[t])}</span>`;}
 const wName=id=>id==='__goal'?'Goal Funds':((wById(id)||{}).name||'—');
-/* ---- bills ---- */
-function nextPayday(fromIso){const d=P(fromIso),y=d.getFullYear(),m=d.getMonth();const c15=new Date(y,m,15),c30=payday30(y,m);
-  if(d<c15) return iso(c15); if(d<c30) return iso(c30); return iso(new Date(y,m+1,15));}
-const ymOf=(y,m)=>`${y}-${pad(m+1)}`;
-function billDue(b,y,m){return iso(new Date(y,m,Math.min(+b.dueDay||1,eom(y,m).getDate())));}
-const billPayment=(b,ym)=>S.expenses.find(e=>e.billId===b.id&&e.billMonth===ym);
-function billAllotmentData(b,ym){
-  const saved=(b.allotments||{})[ym];
-  if(typeof saved==='number') return {amount:Math.max(0,saved),wallet:defaultWallet()};
-  const wallet=saved&&S.wallets.some(w=>w.id===saved.wallet&&!isCredit(w))?saved.wallet:defaultWallet();
-  return {amount:Math.max(0,+(saved&&saved.amount)||0),wallet};
-}
-const billAllotment=(b,ym)=>billAllotmentData(b,ym).amount;
-function billAllotmentSummary(b,ym){
-  const data=billAllotmentData(b,ym),total=Math.max(0,+b.amount||0);
-  return {amount:data.amount,total,remaining:Math.max(0,total-data.amount),progress:total?Math.min(data.amount/total,1)*100:0,wallet:data.wallet};
-}
 function billProgressHtml(b,ym){
   const a=billAllotmentSummary(b,ym);
   return `<div class="bill-progress"><div class="bill-progress-label"><span>Allotted ${fmt(a.amount)} of ${fmt(a.total)} · ${esc(wName(a.wallet))}</span><b class="${a.remaining>0.005?'':'complete'}">${a.remaining>0.005?`${fmt(a.remaining)} left to allot`:'Fully allotted'}</b></div><div class="bar" role="progressbar" aria-label="${esc(b.name)} allotment progress" aria-valuemin="0" aria-valuemax="${a.total}" aria-valuenow="${Math.min(a.amount,a.total)}"><i style="width:${a.progress}%"></i></div></div>`;
 }
-function billState(b,y,m){const ym=ymOf(y,m),due=billDue(b,y,m),t=today();
-  const paid=billPayment(b,ym); if(paid) return {ym,due,st:'paid',paid};
-  if((b.skips||[]).includes(ym)) return {ym,due,st:'skipped'};
-  const days=Math.round((P(due)-P(t))/864e5);
-  return {ym,due,days,st:days<0?'overdue':days<=3?'soon':'scheduled'};}
-function upcomingBills(){const t=today(),np=nextPayday(t),T=P(t),out=[],N=new Date(T.getFullYear(),T.getMonth()+1,1);
-  const months=[[T.getFullYear(),T.getMonth()],[N.getFullYear(),N.getMonth()]];
-  S.bills.filter(b=>b.status!=='Paused').forEach(b=>months.forEach(([y,m])=>{
-    const x=billState(b,y,m); if(x.st==='paid'||x.st==='skipped'||x.due>np) return;
-    if(b.created&&x.ym<b.created.slice(0,7)) return;
-    out.push({b,...x});}));
-  return {np,list:out.sort((a,b)=>a.due.localeCompare(b.due))};}
-function billsNeedingAllotment(){const T=P(today()),N=new Date(T.getFullYear(),T.getMonth()+1,1),out=[];
-  S.bills.filter(b=>b.status!=='Paused').forEach(b=>[[T.getFullYear(),T.getMonth()],[N.getFullYear(),N.getMonth()]].forEach(([y,m])=>{
-    const x=billState(b,y,m);
-    const remaining=billAllotmentSummary(b,x.ym).remaining;
-    if(x.days<0||x.days>5||x.st==='paid'||x.st==='skipped'||(b.created&&x.ym<b.created.slice(0,7))||remaining<=0.005) return;
-    out.push({b,...x,remaining});}));
-  return out.sort((a,b)=>a.due.localeCompare(b.due));}
-function billAllotments(ym=today().slice(0,7)){
-  const [y,month]=ym.split('-').map(Number),m=month-1,out={};
-  S.bills.forEach(b=>{
-    if(b.status==='Paused'||(b.created&&ym<b.created.slice(0,7))) return;
-    const state=billState(b,y,m);
-    if(state.st==='paid'||state.st==='skipped') return;
-    const allot=billAllotmentData(b,ym);
-    if(allot.amount&&wById(allot.wallet)&&!isCredit(wById(allot.wallet))) out[allot.wallet]=(out[allot.wallet]||0)+allot.amount;
-  });
-  return out;
-}
-const billAllotted=(wallet,ym)=>billAllotments(ym)[wallet]||0;
 function dueLabel(x){return x.st==='overdue'?`<small class="due-over">Overdue · ${short(P(x.due))}</small>`:x.days===0?`<small class="due-soon">Due today</small>`:x.days===1?`<small class="due-soon">Due tomorrow · ${short(P(x.due))}</small>`:`<small class="${x.st==='soon'?'due-soon':'due-ok'}">In ${x.days} days · ${short(P(x.due))}</small>`;}
 const ordinal=n=>{const s=['th','st','nd','rd'],v=n%100;return n+(s[(v-20)%10]||s[v]||s[0]);};
 
-/* ---- core calculations ---- */
-function balances(asOf){
-  const s=S.settings, st=s.startDate, end=asOf||today();
-  const inc=sum(S.income.filter(r=>inR(r.date,st,end)));
-  const cashExp=sum(S.expenses.filter(e=>isCash(e)&&inR(e.date,st,end)));
-  const goalExp=sum(S.expenses.filter(e=>!isCash(e)&&inR(e.date,st,end)));
-  const sv=S.savings.filter(r=>inR(r.date,st,end));
-  const netSav=sum(sv,savSigned);
-  const goalSav=sum(sv.filter(r=>r.account==='Goal'),savSigned);
-  const goalFunds=(+s.startGoal||0)+goalSav-goalExp;
-  const other=(+s.startOther||0)+netSav-goalSav;
-  const cash=sum(S.wallets.filter(w=>!isCredit(w)),w=>walletBal(w,end));
-  const owed=-sum(S.wallets.filter(isCredit),w=>walletBal(w,end));
-  const reserved=end===today()?sum(Object.values(billAllotments()),x=>x):0;
-  return {inc,cashExp,goalExp,netSav,cash,availableCash:cash-reserved,owed,other,goalFunds,totalSav:other+goalFunds};
-}
-function periodStats(a,b){
-  const s=S.settings;
-  const inc=sum(S.income.filter(r=>inR(r.date,a,b)));
-  const exp=sum(S.expenses.filter(e=>inR(e.date,a,b)));
-  const cred=new Set(S.wallets.filter(isCredit).map(w=>w.id));
-  const cashExp=sum(S.expenses.filter(e=>isCash(e)&&!cred.has(wOf(e))&&inR(e.date,a,b)));
-  const creditExp=sum(S.expenses.filter(e=>isCash(e)&&cred.has(wOf(e))&&inR(e.date,a,b)));
-  const goalExpP=sum(S.expenses.filter(e=>!isCash(e)&&inR(e.date,a,b)));
-  const cardPay=sum(S.transfers.filter(t=>inR(t.date,a,b)&&!cred.has(t.from)&&cred.has(t.to)))-sum(S.transfers.filter(t=>inR(t.date,a,b)&&cred.has(t.from)&&!cred.has(t.to)));
-  const dep=sum(S.savings.filter(r=>r.action==='Deposit'&&inR(r.date,a,b)));
-  const wd=sum(S.savings.filter(r=>r.action==='Withdrawal'&&inR(r.date,a,b)));
-  const netSav=dep-wd, net=inc-cashExp-cardPay-netSav;
-  const before=iso(new Date(P(a).getTime()-864e5));
-  const opening=a<=s.startDate?sum(S.wallets.filter(w=>!isCredit(w)),w=>+w.start||0):balances(before).cash;
-  const adjustment=sum(S.adjustments.filter(r=>!isCredit(wById(r.wallet))&&inR(r.date,a,b)),r=>r.delta);
-  return {inc,exp,cashExp,creditExp,goalExpP,cardPay,dep,wd,netSav,net,rate:inc?netSav/inc:0,opening,adjustment,closing:opening+net+adjustment,savEnd:balances(b).totalSav};
-}
-function goalStats(){
-  return S.goals.map(g=>{
-    const alloc=sum(S.allocs.filter(a=>a.goal===g.id));
-    const need=Math.max(g.target-alloc,0);
-    const f=g.target>0?Math.min(alloc/g.target,1):0;
-    const status=need===0?'Goal Achieved':(g.date&&today()>g.date?'Past Target':'In Progress');
-    return {...g,alloc,need,f,status};
-  });
-}
-function monthsList(){
-  const st=P(S.settings.startDate), out=[];
-  const dates=[...S.income,...S.expenses,...S.savings,...S.transfers,...S.adjustments].map(r=>r.date).filter(Boolean).sort();
-  const now=new Date(), last=dates.length?P(dates[dates.length-1]):now;
-  const endM=Math.max(last.getFullYear()*12+last.getMonth(),now.getFullYear()*12+now.getMonth())+1;
-  for(let k=st.getFullYear()*12+st.getMonth();k<=endM;k++) out.push(iso(new Date(Math.floor(k/12),k%12,1)));
-  return out;
-}
 const mLabel=s=>P(s).toLocaleDateString('en-US',{month:'long',year:'numeric'});
 function fillSelect(el,opts,first){
   const cur=el.value;
@@ -680,9 +517,9 @@ function openEdit(kind,id){const rec=(S[kind]||[]).find(r=>r.id===id);if(!rec)re
 function deleteRec(kind,id){
   const rec=(S[kind]||[]).find(r=>r.id===id); if(!rec||!cloudOK()) return;
   const gone=[{k:kind,r:rec}]; if(kind==='goals') S.allocs.filter(a=>a.goal===id).forEach(a=>gone.push({k:'allocs',r:a}));
-  FB.bulk(gone.map(g=>({k:g.k,id:g.r.id,del:true}))); buzz();
+  cloud.bulk(gone.map(g=>({k:g.k,id:g.r.id,del:true}))); buzz();
   const noun=kind==='adjustments'?'reconciliation':FORMS[kind].noun;
-  toast(`${cap(noun)} deleted${gone.length>1?` (+${gone.length-1} allocation${gone.length>2?'s':''})`:''}`,{label:'Undo',fn:()=>{FB.bulk(gone.map(g=>{const {id,...d}=g.r;return {k:g.k,id,d:JSON.parse(JSON.stringify(d))};}));toast('Restored');}});
+  toast(`${cap(noun)} deleted${gone.length>1?` (+${gone.length-1} allocation${gone.length>2?'s':''})`:''}`,{label:'Undo',fn:()=>{cloud.bulk(gone.map(g=>{const {id,...d}=g.r;return {k:g.k,id,d:JSON.parse(JSON.stringify(d))};}));toast('Restored');}});
 }
 
 /* ---- wallets ---- */
@@ -771,7 +608,7 @@ $('qaForm').addEventListener('submit',e=>{e.preventDefault();const f=e.target,on
   const bill=qaCtx&&qaCtx.billId; if(bill){rec.billId=qaCtx.billId;rec.billMonth=qaCtx.billMonth;}
   LS.set('fh.lastSrc',f.elements.src.value);
   cPut('expenses',rec); closeSheet(); buzz();
-  toast(bill?'Bill marked paid':`${fmt(amt)} · ${rec.type} added`,{label:'Undo',fn:()=>{FB.bulk([{k:'expenses',id:rec.id,del:true}]);toast('Removed');}});});
+  toast(bill?'Bill marked paid':`${fmt(amt)} · ${rec.type} added`,{label:'Undo',fn:()=>{cloud.bulk([{k:'expenses',id:rec.id,del:true}]);toast('Removed');}});});
 
 /* ================= CLICKS ================= */
 document.addEventListener('click',async e=>{
@@ -866,17 +703,17 @@ $('fileImport').onchange=e=>{const file=e.target.files[0];if(!file) return;const
       S[k].forEach(r=>{if(!keep.has(r.id)) ops.push({k,id:r.id,del:true});});
       inc.forEach(r=>{const {id,...rest}=r;ops.push({k,id:id||uid(),d:JSON.parse(JSON.stringify(rest))});});});
     ops.push({k:'meta',d:{settings:{...EMPTY().settings,...d.settings},lists:d.lists,budget:d.budget||{},wallets:(Array.isArray(d.wallets)&&d.wallets.length)?d.wallets:defaultWallets(d.settings&&d.settings.startCash)}});
-    FB.bulk(ops);$('fMonth').value='';toast('Backup imported – syncing…');buzz();};
+    cloud.bulk(ops);$('fMonth').value='';toast('Backup imported – syncing…');buzz();};
   rd.readAsText(file);e.target.value='';};
 $('btnClear').onclick=async()=>{if(!cloudOK())return;
   if(!await askConfirm({title:'Clear all entries?',msg:'This deletes all income, expenses, savings, goals, allocations, transfers and bills from your cloud account. Settings, wallets and budget are kept. <b>This can\'t be undone</b>, so export a backup first.',ok:'Delete everything',danger:true})) return;
-  const ops=[];KINDS.forEach(k=>S[k].forEach(r=>ops.push({k,id:r.id,del:true})));FB.bulk(ops);toast('Entries cleared');};
-$('btnSignOut').onclick=async()=>{if(await askConfirm({title:'Sign out?',msg:'You\'ll need to sign in with Google again on this device.',ok:'Sign out'})) FB.signOut();};
-$('authBtn').onclick=()=>{$('authErr').textContent='';window.FB&&FB.signIn();};
+  const ops=[];KINDS.forEach(k=>S[k].forEach(r=>ops.push({k,id:r.id,del:true})));cloud.bulk(ops);toast('Entries cleared');};
+$('btnSignOut').onclick=async()=>{if(await askConfirm({title:'Sign out?',msg:'You\'ll need to sign in with Google again on this device.',ok:'Sign out'})) cloud.signOut();};
+$('authBtn').onclick=()=>{$('authErr').textContent='';if(cloud) cloud.signIn();};
 
 function loadScript(src,test){return new Promise((res,rej)=>{if(test()) return res();const el=document.createElement('script');el.src=src;el.async=true;el.onload=()=>res();el.onerror=()=>rej(new Error('Could not load '+src.split('/')[2]+'. Check your internet connection.'));document.head.appendChild(el);});}
 /* ================= BACKUPS ================= */
-const driveReady=()=>!!(window.FH_CONFIG&&FH_CONFIG.googleClientId);
+const driveReady=()=>!!FH_CONFIG.googleClientId;
 const daysSince=d=>d?Math.round((P(today())-P(d))/864e5):null;
 function backupDue(){if(!ready||S.settings.backupRemind===false) return null;
   if(!(S.expenses.length+S.income.length+S.savings.length)) return null;
@@ -968,3 +805,18 @@ chartTheme();
 let _rz,_wasNarrow=innerWidth<760;
 addEventListener('resize',()=>{clearTimeout(_rz);_rz=setTimeout(()=>{const n=innerWidth<760;if(n!==_wasNarrow){_wasNarrow=n;render();}},200);});
 render();
+import('./firebase.js').then(({startFirebase})=>{
+  cloud=startFirebase({
+    onData,
+    onMeta,
+    onSignedIn,
+    onSignedOut,
+    onAdjustmentPermissionDenied,
+    setSync,
+    showAuthError,
+    toast
+  });
+}).catch(error=>{
+  console.error('Could not load the sync service',error);
+  showAuthError({message:'Could not load the sync service. Check your internet connection and reload.'});
+});

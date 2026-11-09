@@ -8,8 +8,11 @@ A personal finance tracker (PHP) for one user, built as a **static web app** hos
 |---|---|
 | `index.html` | App markup and the pre-paint theme bootstrap. No build step and no framework. |
 | `styles.css` | App styles and theme variables. |
-| `app.js` | Main classic script: state, calculations, rendering, UI behavior and backups. |
-| `firebase.js` | Firebase module: App Check, Auth, Firestore and cloud listeners. |
+| `app.js` | Browser-module entry point and UI controller: app state, rendering, forms, navigation, backups and PWA behavior. |
+| `app/config.js` | Shared feature configuration and app version. |
+| `app/utils.js` | Shared formatting, date and amount-input helpers. |
+| `app/finance.js` | Payday, wallet, bill, balance, period and goal calculations; `createFinance()` receives state explicitly. |
+| `firebase.js` | Firebase client module: `startFirebase(callbacks)` returns the cloud API and reports auth/data events through callbacks. |
 | `sw.js` | Service worker. It serves the cached app shell instantly, revalidates `index.html` in the background, and posts `UPDATE_READY` to show the "New version available" banner. It caches Firebase/Chart.js libraries but **never** caches Firestore traffic. |
 | `manifest.webmanifest` | PWA manifest (installable app, shortcut `?add=expense`). |
 | `icons/` | 192/512/maskable icons, apple-touch-icon and favicon. |
@@ -18,28 +21,18 @@ A personal finance tracker (PHP) for one user, built as a **static web app** hos
 ## Deploying
 
 - **Process:** push or merge to `main` and GitHub Pages republishes in about 1 minute. Use a branch + PR for changes.
-- **Updates reach users without a hard refresh:** the service worker re-checks `index.html`, `styles.css`, `app.js` and `firebase.js` (the `CODE_FILES` list in `sw.js`) and shows the update banner when any changes. If you add a new code file, add it to both `SHELL` and `CODE_FILES`. Bump the shell cache name in `sw.js` when shell files change; bump the library cache name when cached libraries change.
+- **Updates reach users without a hard refresh:** the service worker re-checks app source files (the `CODE_FILES` list in `sw.js`) and shows the update banner when any changes. Add every new local module to both `SHELL` and `CODE_FILES`. Bump the shell cache name in `sw.js` when shell files change; bump the library cache name when cached libraries change.
 - **Firebase config is public on purpose.** Security comes from the rules (owner email lock + field validation) and from App Check.
 
 ## App structure
 
-The file has three script blocks, in this order:
+The page has a pre-paint script and a module entry point:
 
 1. **Theme bootstrap** (in `<head>`). Sets `html[data-theme]` from `localStorage fh.theme` (`auto|light|dark`) before paint.
-2. **`app.js` main classic script**, loaded before the Firebase module, with these sections in order:
-   - `CONFIG`: `window.FH_CONFIG = { googleClientId, recaptchaSiteKey }`, plus `APP_VERSION`. Empty values switch features off.
-   - `STATE`: `S` (all data), `EMPTY()`, `defaultWallets()`, `KINDS`, the loading/ready logic (skeleton until every snapshot has arrived), and the cloud hooks `window.onData`, `window.onMeta`, `onSignedIn`, `onSignedOut`, `setSync`.
-   - `HELPERS`: formatting (`fmt`, `nice`, `short`), dates (ISO `YYYY-MM-DD` strings, `P()` parses to a local Date), `parseAmt` and `fmtAmtInput` (comma formatting in `.amt` inputs), `toast(msg, {label, fn})` for Undo actions.
-   - **Calculations (mirror the original Excel formulas):** `payCycle`, `stdPayday`, `timing`, `periodRange`; wallets (`walletBal`, `wFlows`, `wOf`, `srcOf`, `srcToFields`); bills (`nextPayday`, `billState`, `upcomingBills`); `balances(asOf)`, `periodStats(a, b)`, `goalStats()`.
-   - `ICONS & COMPONENTS`: `IC` (UI icons), `CI` (category icons), `catIcon`, `kpi`, `emptyState`, charts (Chart.js).
-   - **Renderers:** `renderDash`, `renderCompare`, `renderUpcoming`, `renderHeat`, `renderChecklist`, `renderActivity` (grouped list via `buildItems` + `groupsHtml`), `renderBills`, `renderWallets`, `renderSavings`, `renderGoals`, `renderSettings`. `render()` dispatches based on `curTab`.
-   - **Navigation:** `go(tab)`. Tabs are `dash`, `activity`, `bills`, `wallets`, `savings`, `goals`, `settings`. The desktop sidebar is `#nav`; the mobile bottom bar is `#mnav` (Home, Activity, +, Wallets, More).
-   - **Sheets and dialogs:** forms live in hidden `#formStore` and are moved into `#sheet` by `openSheet()`. `askConfirm()` returns a Promise and replaces `confirm()`.
-   - **Forms:** the `FORMS` map gives the form id, noun, title and numeric fields. `openForm(kind, rec, preset, seg)` and one generic submit handler write via `cPut`. `deleteRec` deletes with Undo. The quick-add sheet is `openQA(pre)`, also used for paying bills.
-   - **Click handling:** one delegated click handler uses `data-*` attributes (`data-new`, `data-goto`, `data-billpay`, `data-heat`, and so on). Rows can be swiped on touch (right = edit, left = delete).
-   - **Backups:** `backupDue()` drives the 30-day reminder. `downloadBackup()`, `backupToDrive()` (Google Identity Services token + Drive API, `drive.file` scope, "Finance Hub Backups" folder), `doBackup()`.
-   - **PWA:** service worker registration, update banner (`#updBar`), install prompt, `?add=expense` shortcut.
-3. **`firebase.js` Firebase module** (SDK 10.12.2 from gstatic). Sets up App Check (`ReCaptchaEnterpriseProvider`, aka Fraud Defense), Auth (Google popup with redirect fallback), and Firestore with a persistent local cache. Exposes `window.FB = { uid, put, putMeta, bulk, signIn, signOut }` and per-collection `onSnapshot` listeners that feed `onData` and `onMeta`. A listener `permission-denied` error signs the user out with an "account doesn't have access" message.
+2. **`app.js` module entry point.** Imports shared configuration/helpers and creates the finance domain API with a state getter. UI and state orchestration remain here while they are split incrementally.
+3. **`app/finance.js`.** Exports pure payday/date-period functions and `createFinance(getState)`, which exposes wallet, bill, balance, period and goal calculations without a global state dependency.
+4. **`app/utils.js` and `app/config.js`.** Hold shared pure formatting/date helpers and explicit application configuration.
+5. **`firebase.js` Firebase client** (SDK 10.12.2 from gstatic). The app dynamically imports it and calls `startFirebase(callbacks)`. It sets up App Check, Auth (Google popup with redirect fallback), Firestore and persistent local cache, and returns the persistence/auth API rather than assigning `window.FB`. A permission-denied error for the owner data signs the user out; an adjustments permission error is reported to the app callback.
 
 ## Data model (Firestore)
 
@@ -84,7 +77,7 @@ Key rules of the domain:
 
 - **jsdom harness:**
   1. Strip the CDN `<script src>` and the Firebase module.
-  2. Inject a mock `window.FB` that keeps an in-memory store and calls `onData`/`onMeta`.
+  2. Mock `startFirebase(callbacks)` with an in-memory store and invoke the supplied data/meta callbacks.
   3. Stub `matchMedia`, `scrollTo` and `URL.createObjectURL`, and use `pretendToBeVisual: true` for `requestAnimationFrame`.
   4. Drive the UI by dispatching clicks and submits, then assert on text and state.
 - **Sample-data sanity check:** start cash 8,429; expenses Food 101/140/130, Electric 1,793.61, Commute 400 on 2026-11-02; Other Income 1,000 → money in hand **₱6,864.39** (matches the original Excel).
