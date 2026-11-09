@@ -554,6 +554,8 @@ function syncDebtInstallmentMode(){
   const f=$('debtForm'),on=f.elements.installment.checked;
   $('debtSingleDueRow').classList.toggle('hide',on);
   $('debtAmountRow').classList.toggle('hide',on);
+  f.elements.amount.disabled=on;
+  f.elements.dueDate.disabled=on;
   $('debtInstallmentWrap').classList.toggle('hide',!on);
   if(on&&!$('debtInstallments').children.length) setDebtInstallmentInputs([{},{}]);
   updateDebtInstallmentTotal();
