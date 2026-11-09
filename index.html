@@ -36,7 +36,7 @@
     <button title="Goals" data-tab="goals"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/></svg>Goals</button>
     <button title="Settings" data-tab="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>Settings</button>
   </nav>
-  <div class="side-card">Money in hand<b id="sideCash">—</b></div>
+  <div class="side-card">Safe to spend before payday<b id="sideCash">—</b></div>
 </aside>
 <main>
 <div class="topbar"><div><h1 id="pageTitle">Home</h1><p id="pageSub"></p></div><div id="topRight"></div></div>
@@ -293,9 +293,9 @@
   </form>
 
   <form class="entry" id="billAllotForm" novalidate>
-    <label>Amount to set aside (PHP)<input name="amount" class="amt" type="text" inputmode="decimal" autocomplete="off" placeholder="0.00"></label>
+    <label>Total to set aside (PHP)<input name="amount" class="amt" type="text" inputmode="decimal" autocomplete="off" placeholder="0.00"></label>
     <label>Reserve from wallet<select name="wallet" class="wsel-cash"></select></label>
-    <div class="note full" style="margin:0">This reduces the wallet’s available-to-spend amount but does not change its actual balance. Enter 0 to clear this bill’s allotment.</div>
+    <div class="note full" style="margin:0">This total reduces the wallet’s available-to-spend amount but does not change its actual balance. “Allot remainder” fills in the bill’s full usual amount. Enter 0 to clear this bill’s allotment.</div>
     <button class="btn submit" type="submit">Save allotment</button>
   </form>
 

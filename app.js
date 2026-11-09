@@ -145,6 +145,14 @@ function billAllotmentData(b,ym){
   return {amount:Math.max(0,+(saved&&saved.amount)||0),wallet};
 }
 const billAllotment=(b,ym)=>billAllotmentData(b,ym).amount;
+function billAllotmentSummary(b,ym){
+  const data=billAllotmentData(b,ym),total=Math.max(0,+b.amount||0);
+  return {amount:data.amount,total,remaining:Math.max(0,total-data.amount),progress:total?Math.min(data.amount/total,1)*100:0,wallet:data.wallet};
+}
+function billProgressHtml(b,ym){
+  const a=billAllotmentSummary(b,ym);
+  return `<div class="bill-progress"><div class="bill-progress-label"><span>Allotted ${fmt(a.amount)} of ${fmt(a.total)} · ${esc(wName(a.wallet))}</span><b class="${a.remaining>0.005?'':'complete'}">${a.remaining>0.005?`${fmt(a.remaining)} left to allot`:'Fully allotted'}</b></div><div class="bar" role="progressbar" aria-label="${esc(b.name)} allotment progress" aria-valuemin="0" aria-valuemax="${a.total}" aria-valuenow="${Math.min(a.amount,a.total)}"><i style="width:${a.progress}%"></i></div></div>`;
+}
 function billState(b,y,m){const ym=ymOf(y,m),due=billDue(b,y,m),t=today();
   const paid=billPayment(b,ym); if(paid) return {ym,due,st:'paid',paid};
   if((b.skips||[]).includes(ym)) return {ym,due,st:'skipped'};
@@ -160,7 +168,7 @@ function upcomingBills(){const t=today(),np=nextPayday(t),T=P(t),out=[],N=new Da
 function billsNeedingAllotment(){const T=P(today()),N=new Date(T.getFullYear(),T.getMonth()+1,1),out=[];
   S.bills.filter(b=>b.status!=='Paused').forEach(b=>[[T.getFullYear(),T.getMonth()],[N.getFullYear(),N.getMonth()]].forEach(([y,m])=>{
     const x=billState(b,y,m);
-    const remaining=Math.max(0,(+b.amount||0)-billAllotment(b,x.ym));
+    const remaining=billAllotmentSummary(b,x.ym).remaining;
     if(x.days<0||x.days>5||x.st==='paid'||x.st==='skipped'||(b.created&&x.ym<b.created.slice(0,7))||remaining<=0.005) return;
     out.push({b,...x,remaining});}));
   return out.sort((a,b)=>a.due.localeCompare(b.due));}
@@ -322,9 +330,9 @@ function renderDash(){
   const status=now.availableCash>=0
     ?`<div class="hm-status ok"><span class="si">${svgI(IC.check,2.4)}</span><div class="st"><b>${fmt(now.availableCash/days)} <span>/ day</span></b>safe to spend for ${dl} until payday (${npL})</div></div>`
     :`<div class="hm-status short"><span class="si">${svgI(IC.alert,2.2)}</span><div class="st"><b>${fmt(-now.availableCash)} <span>below zero</span></b>Your available wallet balances are below zero.</div></div>`;
-  $('heroMain').innerHTML=`<div class="hm-top"><div class="l">Money in hand</div><div class="v">${fmt(now.availableCash)}</div><div class="s">Across ${nCash} wallet${nCash===1?'':'s'}${reserved>0.005?` · ${fmt(reserved)} allotted to bills`:''}${now.owed>0.005?' · excludes credit cards':''}</div></div>
+  $('heroMain').innerHTML=`<div class="hm-top"><div class="l">Money in hand · safe to spend before payday</div><div class="v">${fmt(now.availableCash)}</div><div class="s">${fmt(now.cash)} in ${nCash} wallet${nCash===1?'':'s'} − ${fmt(reserved)} allotted to bills · next payday ${nice(ub.np)}${now.owed>0.005?' · excludes credit cards':''}</div></div>
     ${status}
-    <div class="hm-stats"><div><span>Net worth</span><b>${fmt(now.cash+now.totalSav-now.owed)}</b></div>${now.owed>0.005?`<div><span>Card owed</span><b>${fmt(now.owed)}</b></div>`:`<div><span>Total savings</span><b>${fmt(now.totalSav)}</b></div>`}<div><span>Bills before payday</span><b>${fmt(ubTotal)}</b></div></div>`;
+    <div class="hm-stats"><div><span>Net worth</span><b>${fmt(now.cash+now.totalSav-now.owed)}</b></div>${now.owed>0.005?`<div><span>Card owed</span><b>${fmt(now.owed)}</b></div>`:`<div><span>Total savings</span><b>${fmt(now.totalSav)}</b></div>`}<div><span>Total due before payday</span><b>${fmt(ubTotal)}</b></div></div>`;
   // budget card
   const monthExp=S.expenses.filter(e=>inR(e.date,mA,mB));
   const budTotal=S.lists.expense.reduce((s,c)=>s+(+S.budget[c]||0),0), spentM=sum(monthExp), used=budTotal?spentM/budTotal:0, left=budTotal-spentM;
@@ -337,7 +345,7 @@ function renderDash(){
   // alerts
   const al=[];
   ub.list.filter(x=>x.st==='overdue').forEach(x=>al.push(`<div class="alert bad"><span><b>${esc(x.b.name)}</b> was due ${nice(x.due)} and isn't marked paid.</span></div>`));
-  billsNeedingAllotment().forEach(x=>al.push(`<div class="alert warn"><span>${billAllotment(x.b,x.ym)?`You still have ${fmt(x.remaining)} left to allot for <b>${esc(x.b.name)}</b>`:`You did not allot money for <b>${esc(x.b.name)}</b> yet; ${fmt(x.remaining)} remains to allot`} before its due date (${nice(x.due)}).</span><button class="btn sm abtn" data-goto="bills">Allot money</button></div>`));
+  billsNeedingAllotment().forEach(x=>al.push(`<div class="alert warn"><span>${billAllotment(x.b,x.ym)?`You still have ${fmt(x.remaining)} left to allot for <b>${esc(x.b.name)}</b>`:`You did not allot money for <b>${esc(x.b.name)}</b> yet; ${fmt(x.remaining)} remains to allot`} before its due date (${nice(x.due)}).</span><button class="btn sm abtn" data-billallot-full="${x.b.id}|${x.ym}">Allot remainder</button></div>`));
   S.lists.expense.forEach(c=>{const bd=+S.budget[c]||0, sp=sum(monthExp.filter(e=>e.type===c));
     if(bd>0&&sp>bd) al.push(`<div class="alert bad"><span><b>${esc(c)}</b> is over budget by ${fmt(sp-bd)} this month.</span></div>`);
     else if(bd>0&&sp>=bd*0.8) al.push(`<div class="alert warn"><span><b>${esc(c)}</b> has used ${pct(sp/bd)} of its budget.</span></div>`);});
@@ -403,8 +411,11 @@ function renderUpcoming(ub){
   if(!S.bills.length){el.innerHTML=emptyState('bill','No recurring bills yet','Add rent, internet and utilities to see what\'s due before payday.','<button class="btn sec sm" data-goto="bills">Set up bills</button>');return;}
   if(!ub.list.length){el.innerHTML=`<div class="alert good" style="margin:0"><span>All bills before payday are paid. Nice!</span></div>`;return;}
   const tot=sum(ub.list,x=>+x.b.amount||0), after=balances().availableCash;
-  el.innerHTML=`<div class="billsum"><div>Due before payday<b>${fmt(tot)}</b></div><div style="text-align:right">Safe to spend before payday<b class="${after<0?'neg':''}">${fmt(after)}</b></div></div>`+
-    ub.list.map(x=>{const allot=billAllotmentData(x.b,x.ym);return `<div class="bill">${catIcon('expense',x.b.category)}<div class="bm"><b>${esc(x.b.name)}</b>${dueLabel(x)}${allot.amount?`<small class="bill-allotment">Allotted ${fmt(allot.amount)} from ${esc(wName(allot.wallet))}</small>`:''}</div><span class="amt">${fmt(x.b.amount)}</span><button class="btn sm" data-billpay="${x.b.id}|${x.ym}">Pay</button></div>`;}).join('');
+  el.innerHTML=`<div class="billsum"><div>Total due before payday<b>${fmt(tot)}</b></div><div style="text-align:right">Safe to spend before payday<b class="${after<0?'neg':''}">${fmt(after)}</b></div></div>`+
+    ub.list.map(x=>{const summary=billAllotmentSummary(x.b,x.ym),allotAction=summary.remaining>0.005
+      ?`<button class="btn sec sm" data-billallot-full="${x.b.id}|${x.ym}">${summary.amount?'Allot remainder':'Allot full amount'}</button>`
+      :`<button class="ibtn" data-billallot="${x.b.id}|${x.ym}">Edit allotment</button>`;
+      return `<div class="bill">${catIcon('expense',x.b.category)}<div class="bm"><b>${esc(x.b.name)}</b>${dueLabel(x)}${billProgressHtml(x.b,x.ym)}</div><span class="amt">${fmt(x.b.amount)}</span><div class="bill-actions">${allotAction}<button class="btn sm" data-billpay="${x.b.id}|${x.ym}">Pay</button></div></div>`;}).join('');
 }
 let heatSel=null;
 function renderHeat(month){
@@ -459,26 +470,29 @@ function renderBills(){
   const active=S.bills.filter(b=>b.status!=='Paused').map(b=>({b,x:billState(b,y,m)}))
     .filter(({b,x})=>x.st!=='paid'&&x.st!=='skipped'&&(!b.created||x.ym>=b.created.slice(0,7)));
   const cash=balances().cash,allotted=sum(active,({b,x})=>billAllotment(b,x.ym)),available=cash-allotted;
-  $('billAllocationSummary').innerHTML=`<div>Wallet balance<b>${fmt(cash)}</b></div><div>Allotted this month<b>${fmt(allotted)}</b></div><div>Available to spend<b class="${available<0?'neg':''}">${fmt(available)}</b></div>`;
-  $('kpiBills').innerHTML=kpi('Due before payday',fmt(sum(ub.list,x=>+x.b.amount||0)),`${ub.list.length} bill${ub.list.length===1?'':'s'} · payday ${short(P(ub.np))}`,'','bill','amber')+
+  $('billAllocationSummary').innerHTML=`<div>Wallet balances<b>${fmt(cash)}</b></div><div>Allotted this month<b>${fmt(allotted)}</b></div><div>Safe to spend<b class="${available<0?'neg':''}">${fmt(available)}</b></div>`;
+  $('kpiBills').innerHTML=kpi('Total due before payday',fmt(sum(ub.list,x=>+x.b.amount||0)),`${ub.list.length} bill${ub.list.length===1?'':'s'} · payday ${short(P(ub.np))}`,'','bill','amber')+
     kpi('Overdue',String(ub.list.filter(x=>x.st==='overdue').length),'',ub.list.some(x=>x.st==='overdue')?'neg':'','alert','red')+
     kpi('Paid this month',fmt(sum(paidM,x=>x.paid.amount)),`${paidM.length} of ${S.bills.filter(b=>b.status!=='Paused').length} active bills`,'','check','em');
   const pre=['Rent','Internet','Electric','Water'].filter(c=>S.lists.expense.includes(c)&&!S.bills.some(b=>b.category===c));
   $('billPresets').innerHTML=pre.length?`<span class="note" style="margin:0">Quick start:</span>`+pre.map(c=>`<button class="qcat" type="button" data-preset="${esc(c)}">${catIcon('expense',c)}${esc(c)}</button>`).join(''):'';
   const rs=[...S.bills].sort((a,b)=>(+a.dueDay||0)-(+b.dueDay||0));
   $('billList').innerHTML=rs.length?`<div class="tlist">${rs.map(b=>{const x=billState(b,y,m);
-    const allot=billAllotment(b,x.ym);
+    const allotment=billAllotmentSummary(b,x.ym),allot=allotment.amount;
     const st=b.status==='Paused'?'<span class="pill">Paused</span>':x.st==='paid'?`<span class="pill good">Paid ${short(P(x.paid.date))}</span>`:x.st==='skipped'?'<span class="pill">Skipped</span>':x.st==='overdue'?'<span class="pill bad">Overdue</span>':x.st==='soon'?`<span class="pill warn">Due ${short(P(x.due))}</span>`:`<span class="pill">Due ${short(P(x.due))}</span>`;
     const can=b.status!=='Paused'&&x.st!=='paid'&&x.st!=='skipped';
-    const allotData=billAllotmentData(b,x.ym);
-    return `<div class="trow" data-kind="bills" data-id="${b.id}"><div class="tmain">${catIcon('expense',b.category)}<div class="tt"><b>${esc(b.name)} ${st}</b><small>${fmt(b.amount)} · every ${ordinal(+b.dueDay)} · ${esc(wName(b.src||defaultWallet()))}</small><small class="bill-allotment">${allot?`Allotted ${fmt(allot)} from ${esc(wName(allotData.wallet))} of ${fmt(b.amount)}`:'Nothing allotted'} for this month</small></div><div class="tacts">${can?`<button class="ibtn" data-billallot="${b.id}|${x.ym}">${allot?'Edit allotment':'Allot'}</button><button class="ibtn" data-billskip="${b.id}|${x.ym}">Skip</button><button class="btn sm" data-billpay="${b.id}|${x.ym}">Pay</button>`:''}</div></div></div>`;}).join('')}</div>`
+    const allotAction=allotment.remaining>0.005
+      ?`<button class="ibtn" data-billallot-full="${b.id}|${x.ym}">${allot?'Allot remainder':'Allot full amount'}</button>`
+      :`<button class="ibtn" data-billallot="${b.id}|${x.ym}">Edit allotment</button>`;
+    return `<div class="trow" data-kind="bills" data-id="${b.id}"><div class="tmain">${catIcon('expense',b.category)}<div class="tt"><b>${esc(b.name)} ${st}</b><small>${fmt(b.amount)} · every ${ordinal(+b.dueDay)} · ${esc(wName(b.src||defaultWallet()))}</small>${can?billProgressHtml(b,x.ym):''}</div><div class="tacts">${can?`${allotAction}<button class="ibtn" data-billskip="${b.id}|${x.ym}">Skip</button><button class="btn sm" data-billpay="${b.id}|${x.ym}">Pay</button>`:''}</div></div></div>`;}).join('')}</div>`
     :emptyState('bill','No recurring bills yet','Add a bill above or tap a quick-start category.','<button class="btn sm" data-new="bills">+ Add bill</button>');
 }
-function openBillAllotment(id,ym){
+function openBillAllotment(id,ym,allotFull=false){
   const b=S.bills.find(z=>z.id===id);if(!b)return;
   const f=$('billAllotForm');f.reset();f.dataset.billId=id;f.dataset.month=ym;
   const allot=billAllotmentData(b,ym);
-  f.elements.amount.value=allot.amount?fmtAmtInput(allot.amount):'';f.elements.wallet.value=allot.wallet;
+  const amount=allotFull?(+b.amount||0):allot.amount;
+  f.elements.amount.value=amount?fmtAmtInput(amount):'';f.elements.wallet.value=allot.wallet;
   openSheet({title:`Allot to ${b.name} · ${P(ym+'-01').toLocaleDateString('en-US',{month:'long',year:'numeric'})}`,node:f});
   if(!matchMedia('(pointer:coarse)').matches)setTimeout(()=>f.elements.amount.focus(),60);
 }
@@ -495,7 +509,7 @@ $('billAllotForm').addEventListener('submit',e=>{
 });
 function renderWallets(){
   const b=balances(), t=today(), mA=t.slice(0,8)+'01';
-  $('kpiW').innerHTML=kpi('Money in hand',fmt(b.availableCash),'After bill allotments','','wallet','em')+kpi('Credit card owed',fmt(Math.max(b.owed,0)),'',b.owed>0.005?'neg':'','down','red')+kpi('Cash minus debt',fmt(b.cash-b.owed),'','','flow','navy');
+  $('kpiW').innerHTML=kpi('Safe to spend before payday',fmt(b.availableCash),'Wallet balances less bill allotments','','wallet','em')+kpi('Credit card owed',fmt(Math.max(b.owed,0)),'',b.owed>0.005?'neg':'','down','red')+kpi('Cash minus debt',fmt(b.cash-b.owed),'','','flow','navy');
   $('walletWarning').innerHTML=adjustmentsAvailable?'':`<div class="alert warn">Wallet reconciliation is unavailable because Firestore rules do not yet allow the adjustments collection. Publish the updated <b>firestore.rules</b> in Firebase Console to enable it.</div>`;
   $('wCards').innerHTML=S.wallets.map(w=>{const v=walletBal(w),reserved=isCredit(w)?0:billAllotted(w.id),available=v-reserved,f=wFlows(w,mA,t);
     return `<div class="wcard" data-wcard="${w.id}" style="--c:${wColor(w.id)}"><div class="top">${wIcon(w.id)}<div style="min-width:0"><b>${esc(w.name)}</b><span>${WTYPE[w.type]||''}</span></div></div>
@@ -774,6 +788,7 @@ document.addEventListener('click',async e=>{
   if((x=c('[data-qcat]'))&&c('#qaCats')){document.querySelectorAll('#qaCats .qcat').forEach(q=>q.classList.toggle('on',q===x));return;}
   if((x=c('[data-qamt]'))){$('qaAmt').value=fmtAmtInput(x.dataset.qamt);return;}
   if((x=c('[data-heat]'))){heatSel=heatSel===x.dataset.heat?null:x.dataset.heat;renderHeat($('fMonth').value);return;}
+  if((x=c('[data-billallot-full]'))){const [id,ym]=x.dataset.billallotFull.split('|');openBillAllotment(id,ym,true);return;}
   if((x=c('[data-billallot]'))){const [id,ym]=x.dataset.billallot.split('|');openBillAllotment(id,ym);return;}
   if((x=c('[data-billpay]'))){const [id,ym]=x.dataset.billpay.split('|'),b=S.bills.find(z=>z.id===id);if(b) openQA({title:'Pay '+b.name,type:b.category,amount:b.amount,src:b.src,note:b.name,billId:b.id,billMonth:ym});return;}
   if((x=c('[data-billskip]'))){const [id,ym]=x.dataset.billskip.split('|'),b=S.bills.find(z=>z.id===id);if(!b||!cloudOK()) return;
