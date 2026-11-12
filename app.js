@@ -23,7 +23,7 @@ const finance=createFinance(()=>S);
 const {
   billAllotment, billAllotmentData, billAllotmentSummary, billAllotted,
   billState, billsNeedingAllotment, balances, defaultWallet, goalStats,
-  isCredit, monthsList, nextPayday, periodStats, srcOf, srcToFields, upcomingBills, wById,
+  isCredit, monthsList, nextPayday, periodStats, savingsBal, srcOf, srcToFields, upcomingBills, wById,
   wFlows, walletBal, wOf
 }=finance;
 let adjustmentsAvailable=true;
@@ -39,18 +39,24 @@ function cMeta(){if(!cloudOK())return;cloud.putMeta(JSON.parse(JSON.stringify({s
 /* ---- cloud read hooks ---- */
 let _rq=0;function schedule(){if(_rq)return;_rq=requestAnimationFrame(()=>{_rq=0;render();});}
 function onData(k,rows){S[k]=rows;markLoaded(k);schedule();}
-function onAdjustmentPermissionDenied(){adjustmentsAvailable=false;schedule();toast('Wallet reconciliation is unavailable until the updated Firestore rules are published.');}
+function onAdjustmentPermissionDenied(){adjustmentsAvailable=false;schedule();toast('Reconciliation is unavailable until the updated Firestore rules are published.');}
 function onDebtPermissionDenied(){debtTrackingAvailable=false;schedule();toast('Debt tracking is unavailable until the updated Firestore rules are published.');}
 function onMeta(m){const d=EMPTY();S.settings={...d.settings,...(m&&m.settings||{})};S.lists=(m&&m.lists)||d.lists;S.budget=(m&&m.budget)||{};
   S.wallets=(m&&Array.isArray(m.wallets)&&m.wallets.length)?m.wallets:defaultWallets(m&&m.settings&&m.settings.startCash);markLoaded('meta');schedule();};
 function setSync(st){const el=$('syncBadge');if(!el)return;el.className='sync '+st;el.innerHTML='<i></i>'+({synced:'Synced',saving:'Saving…',offline:'Offline – will sync'}[st]);}
 function onSignedIn(u){adjustmentsAvailable=true;debtTrackingAvailable=true;$('auth').classList.add('hide');
   userName=((u.displayName||'').trim().split(/\s+/)[0])||'';userEmail=u.email||'';
+  loadNotificationState();
   loaded=new Set();ready=false;document.body.classList.add('loading');clearTimeout(readyTimer);readyTimer=setTimeout(setReady,8000);
   const av=u.photoURL?`<img src="${esc(u.photoURL)}" alt="" referrerpolicy="no-referrer">`:esc((u.displayName||u.email||'?')[0].toUpperCase());
-  $('topRight').innerHTML=`<div class="syncrow"><span class="sync offline" id="syncBadge"><i></i>Connecting…</span><div class="avatar" title="${esc(u.email||'')}">${av}</div></div>`;
+  $('topRight').innerHTML=`<div class="syncrow"><span class="sync offline" id="syncBadge"><i></i>Connecting…</span>
+    <div class="notifWrap"><button type="button" class="notification-button" id="notificationButton" aria-label="Notifications" aria-expanded="false">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></svg><span class="notification-badge hide" id="notificationBadge"></span></button>
+      <div class="notification-panel" id="notificationPanel"><div class="notification-heading"><b>Notifications</b><button type="button" id="notificationMarkAll">Mark all read</button></div><div id="notificationItems"></div></div></div>
+    <div class="avatar" title="${esc(u.email||'')}">${av}</div></div>`;
+  renderNotifications();
   $('acctAv').innerHTML=av;$('acctEmail').textContent=u.email||u.displayName||'';render();}
-function onSignedOut(){S=EMPTY();ready=false;debtTrackingAvailable=true;closeSheet();render();$('topRight').innerHTML='';$('auth').classList.remove('hide');
+function onSignedOut(){S=EMPTY();ready=false;debtTrackingAvailable=true;notificationState={read:{},deleted:{}};closeSheet();render();$('topRight').innerHTML='';$('auth').classList.remove('hide');
   $('authLoading').style.display='none';$('authBtn').style.display='';};
 function showAuthError(e){$('authLoading').style.display='none';$('authBtn').style.display='';
   $('authErr').textContent=e.code==='auth/unauthorized-domain'?'This site address is not authorized in Firebase (Authentication → Settings → Authorized domains).':(e.code?'Sign-in failed: '+e.code:e.message);};
@@ -61,6 +67,61 @@ function toast(m,act){const t=$('toast');t.innerHTML=`<span>${esc(m)}</span>`+(a
   t.classList.toggle('has',!!act);t.classList.add('show');if(act) t.querySelector('.tact').onclick=()=>{t.classList.remove('show');act.fn();};
   clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),act?6000:2200);}
 const cssv=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+let notificationState={read:{},deleted:{}};
+function notificationStateKey(){return `fh.notifications.${cloud&&cloud.uid?cloud.uid():'anonymous'}`;}
+function loadNotificationState(){
+  try{const saved=JSON.parse(LS.get(notificationStateKey(),'{}'));notificationState={read:saved.read||{},deleted:saved.deleted||{}};}
+  catch(_){notificationState={read:{},deleted:{}};}
+}
+function saveNotificationState(){LS.set(notificationStateKey(),JSON.stringify(notificationState));}
+function currentNotifications(){
+  const items=[],month=today().slice(0,7),monthStart=month+'-01',monthEnd=iso(eom(P(monthStart).getFullYear(),P(monthStart).getMonth()));
+  const monthLabel=P(monthStart).toLocaleDateString('en-US',{month:'long'});
+  const monthExpenses=S.expenses.filter(expense=>inR(expense.date,monthStart,monthEnd));
+  const add=(id,title,message,level='warn',action=null)=>items.push({id,title,message,level,action});
+  const bills=upcomingBills();
+  bills.list.filter(item=>item.st==='overdue'||item.st==='soon').forEach(item=>
+    add(`bill:${item.b.id}:${item.ym}:${item.st}`,item.st==='overdue'?'Bill overdue':'Bill due soon',
+      `${item.b.name} ${item.st==='overdue'?'was due':'is due'} ${nice(item.due)} and is not marked paid.`,item.st==='overdue'?'bad':'warn'));
+  billsNeedingAllotment().forEach(item=>
+    add(`allot:${item.b.id}:${item.ym}`, 'Bill needs an allotment',
+      `${item.b.name} still needs ${fmt(item.remaining)} set aside before ${nice(item.due)}.`,'warn',
+      {label:'Allot remainder',type:'allot',value:`${item.b.id}|${item.ym}`}));
+  S.lists.expense.forEach(category=>{
+    const budget=+S.budget[category]||0;
+    const spent=sum(monthExpenses.filter(expense=>expense.type===category&&expense.budgeted!==false));
+    if(budget<=0||spent<budget*.8)return;
+    const level=spent>budget?'over':spent>=budget?'reached':'near';
+    const label=level==='over'?'Budget exceeded':level==='reached'?'Budget fully used':'Budget nearly used';
+    add(`budget:${encodeURIComponent(category)}:${month}:${level}`,label,
+      `${category} has used ${pct(spent/budget)} of its ${monthLabel} budget${level==='over'?` and is over by ${fmt(spent-budget)}`:''}.`,
+      level==='over'?'bad':'warn');
+  });
+  const goalAllocated=sum(S.allocs),goalBalance=balances().goalFunds;
+  if(goalAllocated>goalBalance+0.005)add(`goals:${month}`,'Goal allocations exceed funds',
+    `Allocations (${fmt(goalAllocated)}) exceed available goal funds (${fmt(goalBalance)}).`,'bad');
+  const backup=backupDue();
+  if(backup)add(`backup:${backup.days??'never'}`,'Backup reminder',
+    `${backup.days==null?"You haven't made a backup yet.":`Your last backup was ${backup.days} days ago.`} Make a backup to keep a safe copy outside the app.`,
+    'warn',{label:'Back up now',type:'backup'});
+  const pending=S.income.filter(record=>!record.date).length;
+  if(pending)add(`income:pending:${pending}`,'Income pending',`${pending} income record${pending===1?' is':'s are'} missing a received date.`);
+  return items.filter(item=>!notificationState.deleted[item.id]);
+}
+function renderNotifications(){
+  const button=$('notificationButton'),panel=$('notificationPanel');
+  if(!button||!panel)return;
+  const items=currentNotifications(),unread=items.filter(item=>!notificationState.read[item.id]).length;
+  const badge=$('notificationBadge');
+  badge.textContent=unread>99?'99+':String(unread);badge.classList.toggle('hide',!unread);
+  button.setAttribute('aria-label',unread?`Notifications, ${unread} unread`:'Notifications');
+  $('notificationItems').innerHTML=items.length?items.map(item=>`<article class="notification ${notificationState.read[item.id]?'read':''}">
+    <span class="notification-dot ${item.level}"></span><div class="notification-copy"><b>${esc(item.title)}</b><p>${esc(item.message)}</p>
+    <div class="notification-actions">${item.action?`<button type="button" data-notification-action="${item.action.type}" data-notification-value="${esc(item.action.value||'')}">${esc(item.action.label)}</button>`:''}${notificationState.read[item.id]?'':'<button type="button" data-notification-read="'+esc(item.id)+'">Mark read</button>'}
+    <button type="button" data-notification-delete="${esc(item.id)}">Delete</button></div></div></article>`).join('')
+    :'<div class="notification-empty">You’re all caught up.</div>';
+  $('notificationMarkAll').disabled=!unread;
+}
 
 /* ---- wallets ---- */
 const WI={cash:'<rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 12h.01M18 12h.01"/>',ewallet:'<rect x="6" y="2" width="12" height="20" rx="2.5"/><path d="M11 18h2"/>',bank:'<path d="M3 10h18L12 4z"/><path d="M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 21h18"/>',credit:'<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20M6 15h4"/>',goal:'<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/>'};
@@ -176,12 +237,12 @@ const secOpen=id=>{const el=document.querySelector(`details[data-sec="${id}"]`);
 /* ================= ACTIVITY ITEMS / ROWS ================= */
 const goalName=id=>(S.goals.find(g=>g.id===id)||{}).name||'(deleted goal)';
 function buildItems(kinds){const out=[];const has=k=>kinds.includes(k);
-  if(has('expenses')) S.expenses.forEach(r=>out.push({kind:'expenses',r,date:r.date||'',title:r.type,sub:[wName(srcOf(r)),r.note].filter(Boolean),amt:-(+r.amount||0),icon:catIcon('expense',r.type),tag:r.billId?'<span class="pill">Bill</span>':r.debtId?'<span class="pill">Debt</span>':''}));
+  if(has('expenses')) S.expenses.forEach(r=>out.push({kind:'expenses',r,date:r.date||'',title:r.type,sub:[wName(srcOf(r)),r.note].filter(Boolean),amt:-(+r.amount||0),icon:catIcon('expense',r.type),tag:[r.billId?'<span class="pill">Bill</span>':'',r.debtId?'<span class="pill">Debt</span>':'',r.budgeted===false?'<span class="pill">Outside monthly budget</span>':''].filter(Boolean).join(' ')}));
   if(has('income')) S.income.forEach(r=>{const tm=timing(r);out.push({kind:'income',r,date:r.date||'',title:r.type,sub:[wName(wOf(r)),r.desc,payCycle(r)].filter(Boolean),amt:+r.amount||0,icon:catIcon('income',r.type),tag:(tm&&tm!=='On Time'&&tm!=='Unscheduled')?statusPill(tm):''});});
   if(has('transfers')) S.transfers.forEach(r=>out.push({kind:'transfers',r,date:r.date||'',title:`${wName(r.from)} → ${wName(r.to)}`,sub:[r.note||'Transfer'],amt:+r.amount||0,mv:true,icon:`<span class="cico" style="--c:#6366F1">${svgI(IC.swap)}</span>`}));
-  if(has('savings')) S.savings.forEach(r=>out.push({kind:'savings',r,date:r.date||'',title:`${r.action==='Deposit'?'Saved to':'Withdrew from'} ${r.account}`,sub:[wName(wOf(r)),r.note].filter(Boolean),amt:r.action==='Deposit'?-(+r.amount||0):+r.amount||0,mv:true,icon:catIcon('savings',r.account)}));
+  if(has('savings')) S.savings.forEach(r=>out.push({kind:'savings',r,date:r.date||'',title:r.action==='Transfer'?`Moved ${r.account} → ${r.toAccount}`:`${r.action==='Deposit'?'Saved to':'Withdrew from'} ${r.account}`,sub:[r.action==='Transfer'?'Savings transfer':wName(wOf(r)),r.note].filter(Boolean),amt:r.action==='Deposit'?-(+r.amount||0):+r.amount||0,mv:true,icon:catIcon('savings',r.account)}));
   if(has('allocs')) S.allocs.forEach(r=>out.push({kind:'allocs',r,date:r.date||'',title:goalName(r.goal),sub:[r.note||'Allocation'],amt:+r.amount||0,mv:true,icon:catIcon('savings','Goal')}));
-  if(has('adjustments')) S.adjustments.forEach(r=>{const w=wById(r.wallet);out.push({kind:'adjustments',r,date:r.date||'',title:`Reconciled ${wName(r.wallet)}`,sub:[isCredit(w)?`Amount owed: ${fmt(r.actual)}`:`Balance: ${fmt(r.actual)}`,r.note].filter(Boolean),amt:+r.delta||0,icon:wIcon(r.wallet),tag:'<span class="pill">Reconciliation</span>'});});
+  if(has('adjustments')) S.adjustments.forEach(r=>{const w=wById(r.wallet),saving=r.target==='savings';out.push({kind:'adjustments',r,date:r.date||'',title:`Reconciled ${saving?r.account:wName(r.wallet)}`,sub:[saving?`Savings balance: ${fmt(r.actual)}`:isCredit(w)?`Amount owed: ${fmt(r.actual)}`:`Balance: ${fmt(r.actual)}`,r.note].filter(Boolean),amt:+r.delta||0,icon:saving?catIcon('savings',r.account):wIcon(r.wallet),tag:'<span class="pill">Reconciliation</span>'});});
   return out.sort((a,b)=>(!a.date?-1:!b.date?1:b.date.localeCompare(a.date)));}
 function rowHtml(it){const cls=it.mv?'mv':it.amt>0?'in':'';const sign=it.mv?'':it.amt>0?'+':it.amt<0?'−':'';
   return `<div class="trow" data-kind="${it.kind}" data-id="${it.r.id}"><div class="tmain">${it.icon}<div class="tt"><b>${esc(it.title)} ${it.tag||''}</b><small>${it.sub.map(esc).join(' · ')||'&nbsp;'}</small></div><div class="ta ${cls}">${sign}${fmt(Math.abs(it.amt))}</div></div></div>`;}
@@ -214,8 +275,8 @@ function renderDash(){
     ${status}
     <div class="hm-stats"><div><span>Net worth</span><b>${fmt(now.cash+now.totalSav-now.owed-sum(S.debts,debtOutstanding))}</b></div>${now.owed>0.005?`<div><span>Card owed</span><b>${fmt(now.owed)}</b></div>`:`<div><span>Total savings</span><b>${fmt(now.totalSav)}</b></div>`}<div><span>Total due before payday</span><b>${fmt(ubTotal)}</b></div></div>`;
   // budget card
-  const monthExp=S.expenses.filter(e=>inR(e.date,mA,mB));
-  const budTotal=S.lists.expense.reduce((s,c)=>s+(+S.budget[c]||0),0), spentM=sum(monthExp), used=budTotal?spentM/budTotal:0, left=budTotal-spentM;
+  const monthExp=S.expenses.filter(e=>inR(e.date,mA,mB)), budgetExp=monthExp.filter(e=>e.budgeted!==false);
+  const budTotal=S.lists.expense.reduce((s,c)=>s+(+S.budget[c]||0),0), spentM=sum(budgetExp), outsideSpend=sum(monthExp.filter(e=>e.budgeted===false)), used=budTotal?spentM/budTotal:0, left=budTotal-spentM;
   const isCur=month.slice(0,7)===t.slice(0,7), daysLeft=isCur?eom(y,m).getDate()-P(t).getDate()+1:0;
   const rc=used>1?'var(--red)':used>=.8?'var(--amber)':'var(--em)';
   $('budgetCard').innerHTML=budTotal?`<div class="ring lg" style="--p:${Math.min(used,1)*100};--rc:${rc}"><span>${Math.round(used*100)}%</span></div><div style="min-width:0"><div class="l">Budget left · ${d.toLocaleDateString('en-US',{month:'long'})}</div><div class="v ${left<0?'neg':''}">${left<0?fmt(-left)+' over':fmt(left)}</div><div class="s">${fmt(spentM)} of ${fmt(budTotal)} spent${isCur?` · ${daysLeft} day${daysLeft===1?'':'s'} left`:''}</div></div>`
@@ -223,16 +284,7 @@ function renderDash(){
   $('kpiNow').innerHTML=kpi('Total savings',fmt(now.totalSav),'Other + goal funds','','shield','navy')+kpi('Goal funds',fmt(now.goalFunds),`${fmt(goalFundsAlloc)} allocated`,now.goalFunds<0?'neg':'','target','violet');
   $('wStrip').innerHTML=S.wallets.map(w=>{const v=walletBal(w),available=v-(isCredit(w)?0:billAllotted(w.id));return `<div class="wchip" data-goto="wallets">${wIcon(w.id)}<div><div class="l">${esc(w.name)}</div><b class="${available<0?'neg':''}">${isCredit(w)?(v<0?'Owed '+fmt(-v):fmt(v)):fmt(available)}</b></div></div>`;}).join('');
   // alerts
-  const al=[];
-  ub.list.filter(x=>x.st==='overdue').forEach(x=>al.push(`<div class="alert bad"><span><b>${esc(x.b.name)}</b> was due ${nice(x.due)} and isn't marked paid.</span></div>`));
-  billsNeedingAllotment().forEach(x=>al.push(`<div class="alert warn"><span>${billAllotment(x.b,x.ym)?`You still have ${fmt(x.remaining)} left to allot for <b>${esc(x.b.name)}</b>`:`You did not allot money for <b>${esc(x.b.name)}</b> yet; ${fmt(x.remaining)} remains to allot`} before its due date (${nice(x.due)}).</span><button class="btn sm abtn" data-billallot-full="${x.b.id}|${x.ym}">Allot remainder</button></div>`));
-  S.lists.expense.forEach(c=>{const bd=+S.budget[c]||0, sp=sum(monthExp.filter(e=>e.type===c));
-    if(bd>0&&sp>bd) al.push(`<div class="alert bad"><span><b>${esc(c)}</b> is over budget by ${fmt(sp-bd)} this month.</span></div>`);
-    else if(bd>0&&sp>=bd*0.8) al.push(`<div class="alert warn"><span><b>${esc(c)}</b> has used ${pct(sp/bd)} of its budget.</span></div>`);});
-  if(goalFundsAlloc>now.goalFunds+0.005) al.push(`<div class="alert bad"><span>Goal allocations (${fmt(goalFundsAlloc)}) exceed available goal funds (${fmt(now.goalFunds)}).</span></div>`);
-  const bd=backupDue(); if(bd) al.push(`<div class="alert warn"><span>${bd.days==null?"You haven't made a backup yet.":`Your last backup was ${bd.days} days ago.`} A monthly backup keeps a safe copy outside the app.</span><button class="btn sm abtn" data-backup>Back up now</button></div>`);
-  const pend=S.income.filter(r=>!r.date).length; if(pend) al.push(`<div class="alert warn"><span>${pend} income record${pend>1?'s':''} pending (no date received).</span></div>`);
-  $('alerts').innerHTML=al.join('');
+  $('alerts').innerHTML='';
   renderDebtDashboard();
   renderChecklist(); renderUpcoming(ub); renderHeat(month);
   // period KPIs
@@ -243,13 +295,15 @@ function renderDash(){
     kpi('Net cash flow',fmt(p.net),'After spending, card payments & savings',p.net<0?'neg':'pos','flow','navy');
   // spending section
   renderCompare(month);
-  const rows=S.lists.expense.map(c=>({c,bd:+S.budget[c]||0,sp:sum(monthExp.filter(e=>e.type===c))})).filter(x=>x.bd>0||x.sp>0);
-  $('budgetTbl').innerHTML=rows.length?rows.map(x=>{const r=x.bd?x.sp/x.bd:(x.sp>0?1.01:0),cls=r>1?'over':r>=.8?'near':'';
+  const rows=S.lists.expense.map(c=>({c,bd:+S.budget[c]||0,sp:sum(budgetExp.filter(e=>e.type===c))})).filter(x=>x.bd>0||x.sp>0);
+  $('budgetTbl').innerHTML=rows.length||outsideSpend?rows.map(x=>{const r=x.bd?x.sp/x.bd:(x.sp>0?1.01:0),cls=r>1?'over':r>=.8?'near':'';
     return `<div class="brow"><div class="bn">${catIcon('expense',x.c)}<span>${esc(x.c)}</span></div><div class="bb"><div class="bar"><i class="${cls}" style="width:${Math.min(r,1)*100}%"></i></div></div><div class="bv"><b class="${x.bd&&x.sp>x.bd?'neg':''}">${fmt(x.sp)}</b>${x.bd?'of '+fmt(x.bd):'no budget'}</div></div>`;}).join('')+
-    `<div class="brow" style="font-weight:800"><div class="bn"><span>Total</span></div><div class="bb"><div class="bar"><i class="${used>1?'over':used>=.8?'near':''}" style="width:${Math.min(used,1)*100}%"></i></div></div><div class="bv"><b>${fmt(spentM)}</b>of ${fmt(budTotal)}</div></div><div class="note">Categories with no budget and no spending are hidden.</div>`
+    `${budTotal?`<div class="brow" style="font-weight:800"><div class="bn"><span>Total</span></div><div class="bb"><div class="bar"><i class="${used>1?'over':used>=.8?'near':''}" style="width:${Math.min(used,1)*100}%"></i></div></div><div class="bv"><b>${fmt(spentM)}</b>of ${fmt(budTotal)}</div></div>`:''}${outsideSpend?`<div class="brow"><div class="bn"><span>Outside monthly budget</span></div><div class="bb"></div><div class="bv"><b>${fmt(outsideSpend)}</b>not included</div></div>`:''}<div class="note">Categories with no budget and no spending are hidden.</div>`
     :emptyState('gauge','No budget or spending yet','Set category limits to see progress here.','<button class="btn sec sm" data-goto="settings">Set budget</button>');
   if(secOpen('spend')){const pExp=S.expenses.filter(e=>inR(e.date,a,b));
-    const cats=S.lists.expense.map((c,i)=>({c,v:sum(pExp.filter(e=>e.type===c)),col:PAL[i%PAL.length]})).filter(x=>x.v>0);
+    const cats=S.lists.expense.map((c,i)=>({c,v:sum(pExp.filter(e=>e.type===c&&e.budgeted!==false)),col:PAL[i%PAL.length]})).filter(x=>x.v>0);
+    const outside=sum(pExp.filter(e=>e.budgeted===false));
+    if(outside)cats.push({c:'Outside monthly budget',v:outside,col:'#64748B'});
     mkChart('chCat',{type:'doughnut',data:{labels:cats.map(x=>x.c),datasets:[{data:cats.map(x=>x.v),backgroundColor:cats.map(x=>x.col),borderColor:cssv('--card'),borderWidth:3,hoverOffset:8,borderRadius:6}]},
       options:{responsive:true,maintainAspectRatio:false,cutout:'68%',plugins:{legend:{position:innerWidth<760?'bottom':'right'},tooltip:{callbacks:{label:c=>`${c.label}: ${fmt(c.raw)} (${pct(c.raw/p.exp)})`}}}}});}
   // flow section
@@ -275,7 +329,7 @@ function renderCompare(month){
   const pd=new Date(y,m-1,1),py=pd.getFullYear(),pm=pd.getMonth();
   let a1=iso(new Date(y,m,1)),b1=iso(eom(y,m)),a0=iso(pd),b0=iso(eom(py,pm));
   if(isCur){const day=P(t).getDate();b1=t;b0=iso(new Date(py,pm,Math.min(day,eom(py,pm).getDate())));}
-  const c1={},c0={};S.expenses.forEach(e=>{const v=+e.amount||0;if(inR(e.date,a1,b1))c1[e.type]=(c1[e.type]||0)+v;if(inR(e.date,a0,b0))c0[e.type]=(c0[e.type]||0)+v;});
+  const c1={},c0={};S.expenses.forEach(e=>{const v=+e.amount||0,c=e.budgeted===false?'Outside monthly budget':e.type;if(inR(e.date,a1,b1))c1[c]=(c1[c]||0)+v;if(inR(e.date,a0,b0))c0[c]=(c0[c]||0)+v;});
   const T1=sum(Object.values(c1),x=>x),T0=sum(Object.values(c0),x=>x);
   $('cmpTitle').textContent=`vs ${pd.toLocaleDateString('en-US',{month:'long'})}${isCur?' (same days)':''}`;
   const pill=(a,b)=>{if(b<=0) return a>0?'<span class="pill warn">New</span>':'';const c=(a-b)/b;if(Math.abs(c)<.005) return '<span class="pill">Same</span>';return `<span class="pill ${c>0?'bad':'good'}">${c>0?'▲':'▼'} ${Math.abs(c*100).toFixed(0)}%</span>`;};
@@ -313,7 +367,7 @@ function renderHeat(month){
     h+=`<div class="hc l${lvl(v)}${ds===t?' today':''}${ds>t?' future':''}${ds===heatSel?' sel':''}" data-heat="${ds}" title="${nice(ds)}: ${fmt(v)}"><span>${k}</span>${v?`<small>${kfmt(v)}</small>`:''}</div>`;}
   let det='';
   if(heatSel&&heatSel.slice(0,7)===month.slice(0,7)){const es=S.expenses.filter(e=>e.date===heatSel);
-    det=`<div class="hdetail"><b>${nice(heatSel)}</b> · ${fmt(tot[heatSel]||0)}${es.length?es.map(e=>`<div class="row"><span class="catcell">${catIcon('expense',e.type)}${esc(e.type)}${e.note?`&nbsp;<span style="color:var(--muted)">· ${esc(e.note)}</span>`:''}</span><b>${fmt(e.amount)}</b></div>`).join(''):'<div class="note">No spending this day.</div>'}</div>`;}
+    det=`<div class="hdetail"><b>${nice(heatSel)}</b> · ${fmt(tot[heatSel]||0)}${es.length?es.map(e=>`<div class="row"><span class="catcell">${catIcon('expense',e.type)}${esc(e.type)}${e.budgeted===false?'<span class="pill">Outside monthly budget</span>':''}${e.note?`&nbsp;<span style="color:var(--muted)">· ${esc(e.note)}</span>`:''}</span><b>${fmt(e.amount)}</b></div>`).join(''):'<div class="note">No spending this day.</div>'}</div>`;}
   $('heatMap').innerHTML=`<div class="heat">${h}</div>
     <div class="hlegend">Less <i style="background:var(--soft)"></i><i style="background:var(--h1)"></i><i style="background:var(--h2)"></i><i style="background:var(--h3)"></i><i style="background:var(--h4)"></i> More</div>
     <div class="note">${top?`Highest: <b>${short(P(top))}</b> (${fmt(tot[top])}) · `:''}No-spend days so far: <b>${noSpend}</b>. Tap a day for details.</div>${det}`;
@@ -403,10 +457,13 @@ function renderWallets(){
 function renderSavings(){
   const b=balances(), s=S.settings, st=s.startDate, t=today();
   $('kpiSav').innerHTML=kpi('Total savings',fmt(b.totalSav),'','','shield','navy')+kpi('Other savings',fmt(b.other),'','','piggy','teal')+kpi('Goal funds',fmt(b.goalFunds),'','','target','violet')+kpi('Deposited',fmt(sum(S.savings.filter(r=>r.action==='Deposit'))),'all time','','up','em');
-  const ac=S.lists.savings.map(a=>{const rs=S.savings.filter(r=>r.account===a&&inR(r.date,st,t));const dep=sum(rs.filter(r=>r.action==='Deposit')),wd=sum(rs.filter(r=>r.action==='Withdrawal'));
-    const extra=a==='Goal'?(+s.startGoal||0)-b.goalExp:0;return {a,dep,wd,extra,bal:dep-wd+extra};});
-  $('savAcctList').innerHTML=ac.map(x=>`<div class="brow"><div class="bn">${catIcon('savings',x.a)}<span>${esc(x.a)}</span></div><div class="bb" style="font-size:11px;color:var(--muted)">+${fmt(x.dep)} · −${fmt(x.wd)}${x.extra?` · adj ${fmt(x.extra)}`:''}</div><div class="bv"><b class="${x.bal<0?'neg':''}">${fmt(x.bal)}</b>net</div></div>`).join('')+
-    `<div class="brow"><div class="bn"><span>Starting other savings</span></div><div class="bb"></div><div class="bv"><b>${fmt(s.startOther)}</b></div></div>`;
+  const otherAccount=S.lists.savings.includes('General Savings')?'General Savings':S.lists.savings.find(a=>a!=='Goal');
+  const ac=S.lists.savings.map(a=>{const rs=S.savings.filter(r=>inR(r.date,st,t));const dep=sum(rs.filter(r=>r.action==='Deposit'&&r.account===a)),wd=sum(rs.filter(r=>r.action==='Withdrawal'&&r.account===a));
+    const movedIn=sum(rs.filter(r=>r.action==='Transfer'&&r.toAccount===a)),movedOut=sum(rs.filter(r=>r.action==='Transfer'&&(r.fromAccount||r.account)===a));
+    const recon=sum(S.adjustments.filter(r=>r.target==='savings'&&r.account===a&&inR(r.date,st,t)),r=>r.delta);
+    const extra=a==='Goal'?(+s.startGoal||0)-b.goalExp:a===otherAccount?(+s.startOther||0):0;return {a,dep,wd,movedIn,movedOut,recon,extra,bal:savingsBal(a,t)};});
+  $('savAcctList').innerHTML=(adjustmentsAvailable?'':`<div class="alert warn">Savings reconciliation is unavailable until the updated Firestore rules are published.</div>`)+ac.map(x=>`<div class="brow"><div class="bn">${catIcon('savings',x.a)}<span>${esc(x.a)}</span></div><div class="bb" style="font-size:11px;color:var(--muted)">+${fmt(x.dep)} · −${fmt(x.wd)}${x.movedIn?` · transfer in ${fmt(x.movedIn)}`:''}${x.movedOut?` · transfer out ${fmt(x.movedOut)}`:''}${x.recon?` · recon ${x.recon>0?'+':''}${fmt(x.recon)}`:''}${x.extra?` · start ${fmt(x.extra)}`:''}</div><div class="bv"><b class="${x.bal<0?'neg':''}">${fmt(x.bal)}</b>net${adjustmentsAvailable?`<button class="linkbtn" type="button" data-sav-reconcile="${esc(x.a)}">Reconcile</button>`:''}</div></div>`).join('')+
+    '';
   const it=buildItems(['savings']);
   $('savList').innerHTML=it.length?groupsHtml(it):emptyState('piggy','No savings activity yet','Deposit to an account to start building savings.','<button class="btn sm" data-new="savings" data-action="Deposit">+ Deposit</button>');
 }
@@ -439,14 +496,14 @@ function renderSettings(){
 
 /* ================= RENDER DISPATCH ================= */
 let curTab='dash';
-const TITLES={activity:['Activity','All your income, expenses, transfers and savings'],bills:['Bills','Recurring bills and what\'s due before payday'],wallets:['Wallets','Cash, e-wallets, bank and credit cards'],savings:['Savings','Deposits, withdrawals and account balances'],goals:['Goals','Plan and fund the things you want'],debts:['Debts','Track balances and upcoming repayment dates'],settings:['Settings','Balances, budget, categories and appearance']};
+const TITLES={activity:['Activity','All your income, expenses, transfers and savings'],bills:['Bills','Recurring bills and what\'s due before payday'],wallets:['Wallets','Cash, e-wallets, bank and credit cards'],savings:['Savings','Deposits, withdrawals, transfers and account balances'],goals:['Goals','Plan and fund the things you want'],debts:['Debts','Track balances and upcoming repayment dates'],settings:['Settings','Balances, budget, categories and appearance']};
 function refreshSelects(){
   const ms=monthsList().map(v=>({v,l:mLabel(v)}));
   const fm=$('fMonth'),had=fm.value; fillSelect(fm,ms);
   if(!had||![...fm.options].some(o=>o.value===had)){const tm=today().slice(0,7)+'-01'; fm.value=ms.some(x=>x.v===tm)?tm:ms[ms.length-1].v;}
   const am=$('actMonth'),hadA=am.dataset.init; fillSelect(am,ms.slice().reverse(),'<option value="all">All months</option>');
   if(!hadA){const tm=today().slice(0,7)+'-01'; am.value=ms.some(x=>x.v===tm)?tm:'all'; am.dataset.init='1';}
-  fillSelect($('incType'),S.lists.income);fillSelect($('expType'),S.lists.expense);fillSelect($('savAcctSel'),S.lists.savings);
+  fillSelect($('incType'),S.lists.income);fillSelect($('expType'),S.lists.expense);fillSelect($('savAcctSel'),S.lists.savings);fillSelect($('savToAcctSel'),S.lists.savings);
   fillSelect($('allocGoal'),S.goals.map(g=>({v:g.id,l:g.name})));fillSelect($('billCat'),S.lists.expense);
   const wc=S.wallets.filter(w=>!isCredit(w)).map(w=>({v:w.id,l:w.name})), wa=S.wallets.map(w=>({v:w.id,l:w.name+(isCredit(w)?' (credit)':'')}));
   document.querySelectorAll('.wsel-cash').forEach(el=>fillSelect(el,wc));
@@ -471,6 +528,7 @@ function render(){
   if(curTab==='goals') renderGoals();
   if(curTab==='debts') renderDebts();
   if(curTab==='settings') renderSettings();
+  renderNotifications();
 }
 
 /* ================= NAVIGATION ================= */
@@ -488,22 +546,60 @@ $('mnav').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)
   if(b.dataset.tab==='more'){openSheet({title:'More',node:$('moreMenu')});return;}
   if(b.dataset.tab) go(b.dataset.tab);});
 $('fab').onclick=()=>openQA();
+$('topRight').addEventListener('click',e=>{
+  const button=e.target.closest('#notificationButton');
+  if(button){
+    const panel=$('notificationPanel'),open=panel.classList.toggle('show');
+    button.setAttribute('aria-expanded',String(open));return;
+  }
+  if(e.target.closest('#notificationMarkAll')){
+    currentNotifications().forEach(item=>notificationState.read[item.id]=true);
+    saveNotificationState();renderNotifications();return;
+  }
+  const read=e.target.closest('[data-notification-read]');
+  if(read){notificationState.read[read.dataset.notificationRead]=true;saveNotificationState();renderNotifications();return;}
+  const remove=e.target.closest('[data-notification-delete]');
+  if(remove){notificationState.deleted[remove.dataset.notificationDelete]=true;saveNotificationState();renderNotifications();return;}
+  const action=e.target.closest('[data-notification-action]');
+  if(action){
+    $('notificationPanel').classList.remove('show');$('notificationButton').setAttribute('aria-expanded','false');
+    if(action.dataset.notificationAction==='backup')downloadBackup();
+    else if(action.dataset.notificationAction==='allot'){
+      const [id,month]=action.dataset.notificationValue.split('|');openBillAllotment(id,month,true);
+    }
+  }
+});
+document.addEventListener('click',e=>{
+  if(e.target.closest('.notifWrap'))return;
+  const panel=$('notificationPanel'),button=$('notificationButton');
+  if(panel&&button){panel.classList.remove('show');button.setAttribute('aria-expanded','false');}
+});
 
 /* ================= SHEET & DIALOG ================= */
 const store=$('formStore'); let sheetNode=null;
+let sheetHistory=false;
 function openSheet({title,node,del,seg}){
+  const alreadyOpen=!$('sheetOv').classList.contains('hide');
   if(sheetNode&&sheetNode!==node) store.appendChild(sheetNode);
   sheetNode=node; $('shTitle').textContent=title; $('shBody').innerHTML=''; $('shBody').appendChild(node);
   $('shSeg').innerHTML=seg?`<div class="seg">${[['qa','Expense'],['income','Income'],['transfers','Transfer']].map(([k,l])=>`<button type="button" data-segto="${k}" class="${k===seg?'on':''}">${l}</button>`).join('')}</div>`:'';
   $('shFoot').innerHTML=del?'<button class="btn danger sm" id="shDel" type="button">Delete</button>':'';
   if(del) $('shDel').onclick=del;
+  if(!alreadyOpen&&!sheetHistory){
+    const state=history.state&&typeof history.state==='object'?history.state:{};
+    history.pushState({...state,fhSheet:true},'',location.href);sheetHistory=true;
+  }
   $('sheetOv').classList.remove('hide'); document.body.classList.add('noscroll'); $('shBody').scrollTop=0;
 }
-function closeSheet(){
+function closeSheet({fromPop=false}={}){
+  const wasOpen=!$('sheetOv').classList.contains('hide');
   $('sheetOv').classList.add('hide'); document.body.classList.remove('noscroll');
   if(sheetNode){store.appendChild(sheetNode); sheetNode=null;}
   Object.keys(editing).forEach(k=>editing[k]=null); qaCtx=null; wEditId=null;
+  if(fromPop) sheetHistory=false;
+  else if(wasOpen&&sheetHistory){sheetHistory=false;history.back();}
 }
+addEventListener('popstate',()=>{if(!$('sheetOv').classList.contains('hide'))closeSheet({fromPop:true});else sheetHistory=false;});
 $('shClose').onclick=closeSheet;
 $('sheetOv').addEventListener('click',e=>{if(e.target.id==='sheetOv') closeSheet();});
 function askConfirm({title,msg,ok='Confirm',cancel='Cancel',danger=false}){return new Promise(res=>{
@@ -524,6 +620,14 @@ const FORMS={
   allocs:{form:'allocForm',noun:'allocation',title:'Allocate goal funds',add:'Allocate',num:['amount']}
 };
 const editing={}; let salOpen=false;
+function syncSavingsForm(){
+  const transfer=$('savForm').elements.action.value==='Transfer';
+  $('savAccountLbl').firstChild.textContent=transfer?'From savings account':'Savings account';
+  $('savToAccountLbl').classList.toggle('hide',!transfer);
+  $('savWalletLbl').classList.toggle('hide',transfer);
+  $('savForm').querySelector('.submit').textContent=transfer?'Transfer savings':'Save';
+}
+ $('savForm').elements.action.addEventListener('change',syncSavingsForm);
 function syncSal(){const f=$('incForm'),isSal=f.elements.type.value==='Salary',hasVal=['covStart','covEnd','adjPay','note'].some(k=>f.elements[k].value);
   const show=isSal||salOpen||hasVal; $('salDet').classList.toggle('hide',!show); $('salToggle').textContent=show?'Salary details ▴':'Salary details ▾'; $('salToggle').style.display=isSal?'none':'';}
 $('incType').addEventListener('change',syncSal);
@@ -536,9 +640,14 @@ function openForm(kind,rec,preset,seg){
   if(rec){Object.entries(rec).forEach(([k,v])=>{const el=f.elements[k];if(!el||typeof v==='object'||el instanceof RadioNodeList) return;el.value=el.classList&&el.classList.contains('amt')?fmtAmtInput(v):v;});
     if(kind==='expenses') f.elements.src.value=srcOf(rec);
     if(kind==='income'||kind==='savings') f.elements.wallet.value=wOf(rec);}
+  if(kind==='expenses') f.elements.budgetScope.value=rec&&rec.budgeted===false?'extra':'budget';
   Object.entries(preset||{}).forEach(([k,v])=>{const el=f.elements[k];if(el) el.value=el.classList&&el.classList.contains('amt')?fmtAmtInput(v):v;});
   if(kind==='income') syncSal();
   f.querySelector('.submit').textContent=rec?'Save changes':c.add;
+  if(kind==='savings'){
+    syncSavingsForm();
+    if(rec)f.querySelector('.submit').textContent='Save changes';
+  }
   openSheet({title:rec?'Edit '+c.noun:c.title,node:f,seg:rec?null:seg,del:rec?()=>{const id=rec.id;closeSheet();deleteRec(kind,id);}:null});
   if(!rec&&!matchMedia('(pointer:coarse)').matches) setTimeout(()=>{const a=f.querySelector('.amt,input[name=name]');a&&a.focus();},60);
 }
@@ -667,9 +776,14 @@ Object.entries(FORMS).forEach(([kind,c])=>{
     if(kind==='income'&&((o.covStart&&!o.covEnd)||(!o.covStart&&o.covEnd))){toast('Add both coverage dates, or neither');return;}
     if(kind==='income'&&o.covStart&&o.covEnd<o.covStart){toast('Coverage end is before start');return;}
     if(kind==='transfers'&&o.from===o.to){toast('Choose two different wallets');return;}
+    if(kind==='savings'&&o.action==='Transfer'&&o.account===o.toAccount){toast('Choose two different savings accounts');return;}
     if(kind==='allocs'&&!o.goal){toast('Add a goal first');return;}
     if(['expenses','transfers','savings','allocs'].includes(kind)&&!o.date) o.date=today();
-    if(kind==='expenses'){Object.assign(o,srcToFields(o.src));delete o.src;}
+    if(kind==='expenses'){Object.assign(o,srcToFields(o.src));o.budgeted=o.budgetScope!=='extra';delete o.src;delete o.budgetScope;}
+    if(kind==='savings'){
+      if(o.action==='Transfer')delete o.wallet;
+      else delete o.toAccount;
+    }
     if(!cloudOK()) return;
     const cur=editing[kind]&&S[kind].find(r=>r.id===editing[kind]);
     if(kind==='expenses'&&cur&&cur.debtId){
@@ -688,7 +802,7 @@ Object.entries(FORMS).forEach(([kind,c])=>{
   });
 });
 function openEdit(kind,id){const rec=(S[kind]||[]).find(r=>r.id===id);if(!rec)return;
-  if(kind==='adjustments'){openReconcile(wById(rec.wallet),rec);return;}
+  if(kind==='adjustments'){if(rec.target==='savings')openSavingsReconcile(rec.account,rec);else openReconcile(wById(rec.wallet),rec);return;}
   if(kind==='debts'){openDebtForm(rec);return;}
   if(FORMS[kind]) openForm(kind,rec);}
 function deleteRec(kind,id){
@@ -726,8 +840,9 @@ $('wForm').addEventListener('submit',e=>{e.preventDefault();const f=e.target,o={
 function openReconcile(w,rec){
   if(!adjustmentsAvailable){toast('Publish the updated Firestore rules before reconciling wallets');return;}
   if(!w){toast('This wallet is no longer available');return;}
-  const f=$('recForm');f.reset();f.dataset.wallet=w.id;f.dataset.id=rec?rec.id:'';
+  const f=$('recForm');f.reset();f.dataset.target='wallet';f.dataset.wallet=w.id;f.dataset.id=rec?rec.id:'';
   $('recActualLbl').firstChild.textContent=isCredit(w)?'Actual amount owed (PHP)':'Actual balance (PHP)';
+  $('recExplanation').textContent='The difference is saved as a separate adjustment, so your original transactions stay unchanged. For credit cards, enter the amount owed.';
   f.elements.date.min=S.settings.startDate;f.elements.date.max=today();f.elements.date.value=rec?rec.date:today();
   f.elements.actual.value=rec?fmtAmtInput(rec.actual):'';f.elements.note.value=rec&&rec.note||'';
   const refresh=()=>{
@@ -745,13 +860,42 @@ function openReconcile(w,rec){
   openSheet({title:rec?'Edit reconciliation':'Reconcile '+w.name,node:f,
     del:rec?()=>{const id=rec.id;closeSheet();deleteRec('adjustments',id);}:null});
 }
+function openSavingsReconcile(account,rec){
+  if(!adjustmentsAvailable){toast('Publish the updated Firestore rules before reconciling savings');return;}
+  if(!S.lists.savings.includes(account)){toast('This savings account is no longer available');return;}
+  const f=$('recForm');f.reset();f.dataset.target='savings';f.dataset.account=account;f.dataset.id=rec?rec.id:'';
+  delete f.dataset.wallet;
+  $('recActualLbl').firstChild.textContent='Actual savings balance (PHP)';
+  $('recExplanation').textContent='The difference is saved as an adjustment to this savings account; your original transactions stay unchanged.';
+  f.elements.date.min=S.settings.startDate;f.elements.date.max=today();f.elements.date.value=rec?rec.date:today();
+  f.elements.actual.value=rec?fmtAmtInput(rec.actual):'';f.elements.note.value=rec&&rec.note||'';
+  const refresh=()=>{
+    const date=f.elements.date.value||today(),current=savingsBal(account,date,rec&&rec.id);
+    const actualText=f.elements.actual.value.trim();
+    let preview=`Tracked savings balance for <b>${esc(account)}</b> on ${nice(date)}: <b>${fmt(current)}</b>`;
+    if(actualText){const delta=parseAmt(actualText)-current;preview+=`<br>Adjustment: <b>${delta>0?'+':''}${fmt(delta)}</b>`;}
+    $('recPreview').innerHTML=preview;
+  };
+  f.elements.date.onchange=refresh;f.elements.actual.oninput=refresh;refresh();
+  openSheet({title:rec?'Edit reconciliation':'Reconcile '+account,node:f,
+    del:rec?()=>{const id=rec.id;closeSheet();deleteRec('adjustments',id);}:null});
+}
 $('recForm').addEventListener('submit',e=>{
-  e.preventDefault();const f=e.target,w=wById(f.dataset.wallet),recId=f.dataset.id;
-  if(!w){toast('This wallet is no longer available');return;}
+  e.preventDefault();const f=e.target,recId=f.dataset.id;
   const date=f.elements.date.value,actualText=f.elements.actual.value.trim(),actual=parseAmt(actualText);
   if(!date||date<S.settings.startDate||date>today()){toast('Choose a date between your tracker start date and today');return;}
   if(actualText===''||!Number.isFinite(actual)||actual<0||actual>1000000000){toast('Enter a valid actual balance');return;}
   if(!cloudOK())return;
+  if(f.dataset.target==='savings'){
+    const account=f.dataset.account;
+    if(!S.lists.savings.includes(account)){toast('This savings account is no longer available');return;}
+    const current=savingsBal(account,date,recId||undefined),delta=actual-current;
+    if(!Number.isFinite(delta)||Math.abs(delta)>1000000000){toast('The adjustment is outside the allowed amount range');return;}
+    cPut('adjustments',{id:recId||uid(),target:'savings',account,date,actual,delta,note:f.elements.note.value.trim()});
+    closeSheet();toast(recId?'Savings reconciliation updated':'Savings reconciled');buzz();return;
+  }
+  const w=wById(f.dataset.wallet);
+  if(!w){toast('This wallet is no longer available');return;}
   const current=walletBal(w,date,recId||undefined),delta=(isCredit(w)?-actual:actual)-current;
   if(!Number.isFinite(delta)||Math.abs(delta)>1000000000){toast('The adjustment is outside the allowed amount range');return;}
   const rec={id:recId||uid(),wallet:w.id,date,actual,delta,note:f.elements.note.value.trim()};
@@ -783,7 +927,7 @@ $('qaForm').addEventListener('submit',e=>{e.preventDefault();const f=e.target,on
   const amt=parseAmt(f.elements.amount.value); if(!(amt>0)){toast('Enter an amount');$('qaAmt').focus();return;}
   if(!on){toast('Pick a category');return;}
   if(!cloudOK()) return;
-  const rec={id:uid(),type:on.dataset.qcat,amount:amt,date:f.elements.date.value||today(),note:f.elements.note.value.trim(),...srcToFields(f.elements.src.value)};
+  const rec={id:uid(),type:on.dataset.qcat,amount:amt,date:f.elements.date.value||today(),note:f.elements.note.value.trim(),budgeted:f.elements.budgetScope.value!=='extra',...srcToFields(f.elements.src.value)};
   const bill=qaCtx&&qaCtx.billId; if(bill){rec.billId=qaCtx.billId;rec.billMonth=qaCtx.billMonth;}
   LS.set('fh.lastSrc',f.elements.src.value);
   cPut('expenses',rec); closeSheet(); buzz();
@@ -799,7 +943,7 @@ document.addEventListener('click',async e=>{
   if((x=c('[data-act-filter]'))){actFilter=x.dataset.actFilter;$('actMonth').value='all';go('activity');return;}
   if(c('[data-act-reset]')){actFilter='all';$('actQ').value='';$('actMonth').value='all';render();return;}
   if((x=c('[data-segto]'))){const k=x.dataset.segto;if(k==='qa') openQA(); else openForm(k,null,{},k);return;}
-  if((x=c('[data-new]'))){const k=x.dataset.new;closeSheet();if(k==='wallet') openWalletForm(); else openForm(k,null,x.dataset.action?{action:x.dataset.action}:{});return;}
+  if((x=c('[data-new]'))){const k=x.dataset.new;if(k==='wallet') openWalletForm(); else openForm(k,null,x.dataset.action?{action:x.dataset.action}:{});return;}
   if((x=c('[data-goto]'))){go(x.dataset.goto);return;}
   if((x=c('[data-qcat]'))&&c('#qaCats')){document.querySelectorAll('#qaCats .qcat').forEach(q=>q.classList.toggle('on',q===x));return;}
   if((x=c('[data-qamt]'))){$('qaAmt').value=fmtAmtInput(x.dataset.qamt);return;}
@@ -812,6 +956,7 @@ document.addEventListener('click',async e=>{
     toast(`${b.name} skipped for ${P(ym+'-01').toLocaleDateString('en-US',{month:'long'})}`,{label:'Undo',fn:()=>{const nb=S.bills.find(z=>z.id===id);if(nb) cPut('bills',{...nb,skips:(nb.skips||[]).filter(s=>s!==ym)});}});return;}
   if((x=c('[data-preset]'))){const cat=x.dataset.preset;openForm('bills',null,{name:cat,category:cat,amount:+S.budget[cat]||''});setTimeout(()=>$('billForm').elements.dueDay.focus(),90);toast('Now set the due day');return;}
   if((x=c('[data-reconcile]'))){openReconcile(wById(x.dataset.reconcile));return;}
+  if((x=c('[data-sav-reconcile]'))){openSavingsReconcile(x.dataset.savReconcile);return;}
   if((x=c('[data-wcard]'))){openWalletForm(wById(x.dataset.wcard));return;}
   if((x=c('[data-debt-edit]'))){openDebtForm(S.debts.find(debt=>debt.id===x.dataset.debtEdit));return;}
   if((x=c('[data-debtpay]'))){const [debtId,installmentId]=x.dataset.debtpay.split('|');openDebtPayment(debtId,installmentId);return;}
@@ -821,7 +966,7 @@ document.addEventListener('click',async e=>{
   if(c('[data-ckshow]')){LS.set('fh.ckl','');go('dash');return;}
   if((x=c('[data-theme-set]'))){applyTheme(x.dataset.themeSet);return;}
   if((x=c('[data-rmlist]'))){const k=x.dataset.rmlist,i=+x.dataset.i,v=S.lists[k][i];
-    const used=(k==='expense'&&(S.expenses.some(z=>z.type===v)||S.bills.some(z=>z.category===v)))||(k==='income'&&S.income.some(z=>z.type===v))||(k==='savings'&&S.savings.some(z=>z.account===v));
+    const used=(k==='expense'&&(S.expenses.some(z=>z.type===v)||S.bills.some(z=>z.category===v)))||(k==='income'&&S.income.some(z=>z.type===v))||(k==='savings'&&(S.savings.some(z=>z.account===v||z.toAccount===v)||S.adjustments.some(z=>z.target==='savings'&&z.account===v)));
     if(used&&!await askConfirm({title:`Remove “${v}”?`,msg:'It\'s used by existing entries. They\'ll keep this value, but it won\'t be offered in lists anymore.',ok:'Remove',danger:true})) return;
     S.lists[k].splice(i,1); cMeta(); render(); toast('Removed',{label:'Undo',fn:()=>{S.lists[k].splice(i,0,v);cMeta();render();}}); return;}
   if((x=c('.trow[data-id]'))){if(c('button')||x.dataset.swiped) return; openEdit(x.dataset.kind,x.dataset.id);return;}
@@ -867,12 +1012,12 @@ try{matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>{if
 function download(name,text,type){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type}));a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);}
 $('btnExport').onclick=downloadBackup;
 $('btnCsv').onclick=()=>{
-  const q=v=>`"${String(v??'').replace(/"/g,'""')}"`, rows=[['Kind','Date','Type/Category','Amount','Paid From / Action','Account','Wallet','Description/Note']];
-  S.income.forEach(r=>rows.push(['Income',r.date,r.type,r.amount,'','',wName(wOf(r)),r.desc]));
-  S.expenses.forEach(r=>rows.push(['Expense',r.date,r.type,r.amount,r.paidFrom,'',wName(srcOf(r)),r.note]));
-  S.savings.forEach(r=>rows.push(['Savings',r.date,'',r.amount,r.action,r.account,wName(wOf(r)),r.note]));
-  S.transfers.forEach(r=>rows.push(['Transfer',r.date,'',r.amount,wName(r.from)+' → '+wName(r.to),'','',r.note]));
-  S.adjustments.forEach(r=>rows.push(['Reconciliation',r.date,'',r.delta,'', '',wName(r.wallet),`${isCredit(wById(r.wallet))?'Amount owed':'Balance'}: ${r.actual}${r.note?` · ${r.note}`:''}`]));
+  const q=v=>`"${String(v??'').replace(/"/g,'""')}"`, rows=[['Kind','Date','Type/Category','Amount','Paid From / Action','Account','Wallet','Description/Note','Budget treatment']];
+  S.income.forEach(r=>rows.push(['Income',r.date,r.type,r.amount,'','',wName(wOf(r)),r.desc,'']));
+  S.expenses.forEach(r=>rows.push(['Expense',r.date,r.type,r.amount,r.paidFrom,'',wName(srcOf(r)),r.note,r.budgeted===false?'Outside monthly budget':'Monthly budget']));
+  S.savings.forEach(r=>rows.push(['Savings',r.date,'',r.amount,r.action,r.action==='Transfer'?`${r.account} → ${r.toAccount}`:r.account,r.action==='Transfer'?'':wName(wOf(r)),r.note,'']));
+  S.transfers.forEach(r=>rows.push(['Transfer',r.date,'',r.amount,wName(r.from)+' → '+wName(r.to),'','',r.note,'']));
+  S.adjustments.forEach(r=>rows.push(['Reconciliation',r.date,'',r.delta,'',r.target==='savings'?r.account:'',r.target==='savings'?'':wName(r.wallet),`${r.target==='savings'?'Savings balance':isCredit(wById(r.wallet))?'Amount owed':'Balance'}: ${r.actual}${r.note?` · ${r.note}`:''}`,'']));
   download(`finance-hub-transactions-${today()}.csv`,rows.map(r=>r.map(q).join(',')).join('\n'),'text/csv');};
 $('fileImport').onchange=e=>{const file=e.target.files[0];if(!file) return;const rd=new FileReader();
   rd.onload=async()=>{let d;try{d=JSON.parse(rd.result);if(!d.settings||!d.lists) throw 0;}catch(_){toast('Invalid backup file');return;}

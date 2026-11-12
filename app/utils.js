@@ -36,7 +36,7 @@ export const nice = value => value ? P(value).toLocaleDateString('en-US', {
 export const short = date => date.toLocaleDateString('en-US', {month: 'short', day: 'numeric'});
 export const cap = value => value.charAt(0).toUpperCase() + value.slice(1);
 export const isCash = expense => expense.paidFrom !== 'Goal Funds';
-export const savSigned = saving => saving.action === 'Deposit' ? +saving.amount : -saving.amount;
+export const savSigned = saving => saving.action === 'Deposit' ? +saving.amount : saving.action === 'Withdrawal' ? -saving.amount : 0;
 export const parseAmt = value => +String(value ?? '').replace(/[^\d.]/g, '') || 0;
 
 export function fmtAmtInput(value) {

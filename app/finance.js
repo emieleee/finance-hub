@@ -79,6 +79,35 @@ export function createFinance(getState) {
   const srcToFields = source => source === '__goal'
     ? {paidFrom: 'Goal Funds', wallet: ''}
     : {paidFrom: 'Cash Balance', wallet: source || defaultWallet()};
+  const savingsRecordDelta = (record, account) => {
+    const amount = +record.amount || 0;
+    if (record.action === 'Deposit') return record.account === account ? amount : 0;
+    if (record.action === 'Withdrawal') return record.account === account ? -amount : 0;
+    if (record.action === 'Transfer') {
+      const from = record.fromAccount || record.account;
+      return (from === account ? -amount : 0) + (record.toAccount === account ? amount : 0);
+    }
+    return 0;
+  };
+  function savingsBal(account, end, excludeAdjustmentId) {
+    const data = state();
+    const until = end || today();
+    const otherAccount = data.lists.savings.includes('General Savings')
+      ? 'General Savings'
+      : data.lists.savings.find(item => item !== 'Goal') || 'General Savings';
+    const startBalance = account === 'Goal' ? +data.settings.startGoal || 0
+      : account === otherAccount ? +data.settings.startOther || 0 : 0;
+    const records = sum(data.savings.filter(record => inR(record.date, data.settings.startDate, until)),
+      record => savingsRecordDelta(record, account));
+    const adjustments = sum(data.adjustments.filter(record =>
+      record.target === 'savings' && record.account === account && record.id !== excludeAdjustmentId &&
+      inR(record.date, data.settings.startDate, until)), record => record.delta);
+    const goalSpending = account === 'Goal'
+      ? sum(data.expenses.filter(record => record.paidFrom === 'Goal Funds' &&
+        inR(record.date, data.settings.startDate, until)))
+      : 0;
+    return startBalance + records + adjustments - goalSpending;
+  }
   const ymOf = (year, month) => `${year}-${String(month + 1).padStart(2, '0')}`;
   const nextPayday = fromIso => {
     const date = P(fromIso);
@@ -178,9 +207,13 @@ export function createFinance(getState) {
       record.paidFrom === 'Goal Funds' && inR(record.date, start, end)));
     const savings = data.savings.filter(record => inR(record.date, start, end));
     const netSav = sum(savings, savSigned);
-    const goalSav = sum(savings.filter(record => record.account === 'Goal'), savSigned);
-    const goalFunds = (+data.settings.startGoal || 0) + goalSav - goalExp;
-    const other = (+data.settings.startOther || 0) + netSav - goalSav;
+    const goalSav = sum(savings, record => savingsRecordDelta(record, 'Goal'));
+    const savingsAdjustments = data.adjustments.filter(record =>
+      record.target === 'savings' && inR(record.date, start, end));
+    const goalAdjustment = sum(savingsAdjustments.filter(record => record.account === 'Goal'), record => record.delta);
+    const otherAdjustment = sum(savingsAdjustments.filter(record => record.account !== 'Goal'), record => record.delta);
+    const goalFunds = (+data.settings.startGoal || 0) + goalSav + goalAdjustment - goalExp;
+    const other = (+data.settings.startOther || 0) + netSav - goalSav + otherAdjustment;
     const cash = sum(data.wallets.filter(wallet => !isCredit(wallet)), wallet => walletBal(wallet, end));
     const owed = -sum(data.wallets.filter(isCredit), wallet => walletBal(wallet, end));
     const reserved = end === today() ? sum(Object.values(billAllotments()), amount => amount) : 0;
@@ -211,7 +244,7 @@ export function createFinance(getState) {
       ? sum(data.wallets.filter(wallet => !isCredit(wallet)), wallet => +wallet.start || 0)
       : balances(before).cash;
     const adjustment = sum(data.adjustments.filter(record =>
-      !isCredit(wById(record.wallet)) && inR(record.date, start, end)), record => record.delta);
+      record.target !== 'savings' && !isCredit(wById(record.wallet)) && inR(record.date, start, end)), record => record.delta);
     return {inc: income, exp: expenses, cashExp, creditExp, goalExpP, cardPay, dep: deposits, wd: withdrawals,
       netSav, net, rate: income ? netSav / income : 0, opening, adjustment, closing: opening + net + adjustment,
       savEnd: balances(end).totalSav};
@@ -242,6 +275,6 @@ export function createFinance(getState) {
     isCredit, defaultWallet, wById, wOf, wFlows, walletBal, srcOf, srcToFields, nextPayday,
     billDue, billPayment, billAllotmentData, billAllotment, billAllotmentSummary, billState,
     upcomingBills, billsNeedingAllotment, billAllotments, billAllotted, balances, periodStats,
-    goalStats, monthsList
+    goalStats, savingsBal, monthsList
   };
 }

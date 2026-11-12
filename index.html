@@ -133,8 +133,8 @@
 <!-- SAVINGS -->
 <section class="tab" id="tab-savings">
   <div class="kpis" id="kpiSav"></div>
-  <div class="row-between"><div class="sec-title" style="margin:0">Balance by account</div><div style="display:flex;gap:8px"><button class="btn sec sm" data-new="savings" data-action="Withdrawal">Withdraw</button><button class="btn sm" data-new="savings" data-action="Deposit">+ Deposit</button></div></div>
-  <div class="card"><div id="savAcctList"></div><div class="note">Deposits move money from a wallet into savings; withdrawals put it back. Use the “Goal” account to build Goal Funds.</div></div>
+  <div class="row-between"><div class="sec-title" style="margin:0">Balance by account</div><div style="display:flex;gap:8px"><button class="btn sec sm" data-new="savings" data-action="Withdrawal">Withdraw</button><button class="btn sec sm" data-new="savings" data-action="Transfer">Transfer</button><button class="btn sm" data-new="savings" data-action="Deposit">+ Deposit</button></div></div>
+  <div class="card"><div id="savAcctList"></div><div class="note">Deposits move money from a wallet into savings; withdrawals put it back. Transfers move money between savings accounts without changing wallet balances. Your starting other-savings balance is included in General Savings (or the first available non-Goal account if General Savings was removed). Use the “Goal” account to build Goal Funds.</div></div>
   <div class="card"><h2>Savings activity</h2><div id="savList"></div></div>
 </section>
 
@@ -240,6 +240,7 @@
       <div class="qamts"><button type="button" data-qamt="50">₱50</button><button type="button" data-qamt="100">₱100</button><button type="button" data-qamt="200">₱200</button><button type="button" data-qamt="500">₱500</button><button type="button" data-qamt="1000">₱1,000</button></div>
       <div class="sec-title" style="margin-top:0">Category</div><div class="qa-cats" id="qaCats"></div></div>
     <label>Paid from<select name="src" id="qaSrc" class="wsel-all"></select></label>
+    <label class="full">Budget treatment<select name="budgetScope"><option value="budget">Part of my monthly budget</option><option value="extra">Outside my monthly budget</option></select></label>
     <label>Date<input name="date" id="qaDate" type="date"></label>
     <label class="full">Note (optional)<input name="note" id="qaNote" type="text"></label>
     <button class="btn submit" type="submit" id="qaSubmit">Add expense</button>
@@ -249,6 +250,7 @@
     <label class="full">Amount (PHP)<input name="amount" class="amt" type="text" inputmode="decimal" autocomplete="off" placeholder="0.00"></label>
     <label>Category<select name="type" id="expType"></select></label>
     <label>Paid from<select name="src" class="wsel-all"></select></label>
+    <label class="full">Budget treatment<select name="budgetScope"><option value="budget">Part of my monthly budget</option><option value="extra">Outside my monthly budget</option></select></label>
     <label>Date<input name="date" type="date"></label>
     <label>Note<input name="note" type="text" placeholder="Optional"></label>
     <div class="note full" style="margin:0">Goal-funded expenses reduce Goal Funds automatically. Don't also log a Goal withdrawal for the same purchase.</div>
@@ -284,9 +286,10 @@
 
   <form class="entry" id="savForm" novalidate>
     <label class="full">Amount (PHP)<input name="amount" class="amt" type="text" inputmode="decimal" autocomplete="off" placeholder="0.00"></label>
-    <label>Action<select name="action"><option>Deposit</option><option>Withdrawal</option></select></label>
-    <label>Savings account<select name="account" id="savAcctSel"></select></label>
-    <label>From / to wallet<select name="wallet" class="wsel-cash"></select></label>
+    <label>Action<select name="action"><option>Deposit</option><option>Withdrawal</option><option>Transfer</option></select></label>
+    <label id="savAccountLbl">Savings account<select name="account" id="savAcctSel"></select></label>
+    <label class="hide" id="savToAccountLbl">To savings account<select name="toAccount" id="savToAcctSel"></select></label>
+    <label id="savWalletLbl">From / to wallet<select name="wallet" class="wsel-cash"></select></label>
     <label>Date<input name="date" type="date"></label>
     <label class="full">Note<input name="note" type="text" placeholder="Optional"></label>
     <button class="btn submit" type="submit">Save</button>
@@ -363,7 +366,7 @@
     <label class="full" id="recActualLbl">Actual balance (PHP)<input name="actual" class="amt" type="text" inputmode="decimal" autocomplete="off" placeholder="0.00" required></label>
     <label>Date reconciled<input name="date" type="date" required></label>
     <label class="full">Note (optional)<input name="note" type="text" maxlength="500" placeholder="e.g. checked against bank app"></label>
-    <div class="note full" style="margin:0">The difference is saved as a separate adjustment, so your original transactions stay unchanged. For credit cards, enter the amount owed.</div>
+    <div class="note full" id="recExplanation" style="margin:0">The difference is saved as a separate adjustment, so your original transactions stay unchanged. For credit cards, enter the amount owed.</div>
     <button class="btn submit" type="submit">Save reconciliation</button>
   </form>
 
