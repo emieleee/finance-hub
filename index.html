@@ -72,9 +72,11 @@
   </div>
   <div class="sec-title" id="periodHead"></div>
   <div class="kpis" id="kpiPeriod"></div>
-  <details class="sec" data-sec="spend"><summary>Spending breakdown</summary>
+  <details class="sec" data-sec="spend"><summary>Data analysis</summary>
     <div class="grid2">
-      <div class="card"><h2>By category</h2><div class="chartbox"><canvas id="chCat"></canvas></div></div>
+      <div class="card"><h2>Budgeted vs outside budget</h2><div class="chartbox"><canvas id="chSpendScope"></canvas></div></div>
+      <div class="card"><h2>Part of monthly budget · by category</h2><div class="chartbox"><canvas id="chCat"></canvas></div></div>
+      <div class="card"><h2>Outside monthly budget · by category</h2><div class="chartbox"><canvas id="chExtraCat"></canvas></div></div>
       <div class="card"><h2 id="cmpTitle">vs last month</h2><div id="cmpBox"></div></div>
     </div>
     <div class="card"><div class="row-between"><h2>Monthly budget</h2><button class="ibtn" data-goto="settings">Edit budget ›</button></div><div id="budgetTbl"></div></div>

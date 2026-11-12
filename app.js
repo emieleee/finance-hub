@@ -67,6 +67,7 @@ function toast(m,act){const t=$('toast');t.innerHTML=`<span>${esc(m)}</span>`+(a
   t.classList.toggle('has',!!act);t.classList.add('show');if(act) t.querySelector('.tact').onclick=()=>{t.classList.remove('show');act.fn();};
   clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),act?6000:2200);}
 const cssv=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const isBudgetExpense=expense=>!expense.debtId&&expense.budgeted!==false;
 let notificationState={read:{},deleted:{}};
 function notificationStateKey(){return `fh.notifications.${cloud&&cloud.uid?cloud.uid():'anonymous'}`;}
 function loadNotificationState(){
@@ -89,7 +90,7 @@ function currentNotifications(){
       {label:'Allot remainder',type:'allot',value:`${item.b.id}|${item.ym}`}));
   S.lists.expense.forEach(category=>{
     const budget=+S.budget[category]||0;
-    const spent=sum(monthExpenses.filter(expense=>expense.type===category&&expense.budgeted!==false));
+    const spent=sum(monthExpenses.filter(expense=>expense.type===category&&isBudgetExpense(expense)));
     if(budget<=0||spent<budget*.8)return;
     const level=spent>budget?'over':spent>=budget?'reached':'near';
     const label=level==='over'?'Budget exceeded':level==='reached'?'Budget fully used':'Budget nearly used';
@@ -237,13 +238,17 @@ const secOpen=id=>{const el=document.querySelector(`details[data-sec="${id}"]`);
 /* ================= ACTIVITY ITEMS / ROWS ================= */
 const goalName=id=>(S.goals.find(g=>g.id===id)||{}).name||'(deleted goal)';
 function buildItems(kinds){const out=[];const has=k=>kinds.includes(k);
-  if(has('expenses')) S.expenses.forEach(r=>out.push({kind:'expenses',r,date:r.date||'',title:r.type,sub:[wName(srcOf(r)),r.note].filter(Boolean),amt:-(+r.amount||0),icon:catIcon('expense',r.type),tag:[r.billId?'<span class="pill">Bill</span>':'',r.debtId?'<span class="pill">Debt</span>':'',r.budgeted===false?'<span class="pill">Outside monthly budget</span>':''].filter(Boolean).join(' ')}));
+  if(has('expenses')) S.expenses.forEach(r=>out.push({kind:'expenses',r,date:r.date||'',title:r.type,sub:[wName(srcOf(r)),r.note].filter(Boolean),amt:-(+r.amount||0),icon:catIcon('expense',r.type),tag:[r.billId?'<span class="pill">Bill</span>':'',r.debtId?'<span class="pill">Debt</span>':'',!isBudgetExpense(r)?'<span class="pill">Outside monthly budget</span>':''].filter(Boolean).join(' ')}));
   if(has('income')) S.income.forEach(r=>{const tm=timing(r);out.push({kind:'income',r,date:r.date||'',title:r.type,sub:[wName(wOf(r)),r.desc,payCycle(r)].filter(Boolean),amt:+r.amount||0,icon:catIcon('income',r.type),tag:(tm&&tm!=='On Time'&&tm!=='Unscheduled')?statusPill(tm):''});});
   if(has('transfers')) S.transfers.forEach(r=>out.push({kind:'transfers',r,date:r.date||'',title:`${wName(r.from)} → ${wName(r.to)}`,sub:[r.note||'Transfer'],amt:+r.amount||0,mv:true,icon:`<span class="cico" style="--c:#6366F1">${svgI(IC.swap)}</span>`}));
   if(has('savings')) S.savings.forEach(r=>out.push({kind:'savings',r,date:r.date||'',title:r.action==='Transfer'?`Moved ${r.account} → ${r.toAccount}`:`${r.action==='Deposit'?'Saved to':'Withdrew from'} ${r.account}`,sub:[r.action==='Transfer'?'Savings transfer':wName(wOf(r)),r.note].filter(Boolean),amt:r.action==='Deposit'?-(+r.amount||0):+r.amount||0,mv:true,icon:catIcon('savings',r.account)}));
   if(has('allocs')) S.allocs.forEach(r=>out.push({kind:'allocs',r,date:r.date||'',title:goalName(r.goal),sub:[r.note||'Allocation'],amt:+r.amount||0,mv:true,icon:catIcon('savings','Goal')}));
   if(has('adjustments')) S.adjustments.forEach(r=>{const w=wById(r.wallet),saving=r.target==='savings';out.push({kind:'adjustments',r,date:r.date||'',title:`Reconciled ${saving?r.account:wName(r.wallet)}`,sub:[saving?`Savings balance: ${fmt(r.actual)}`:isCredit(w)?`Amount owed: ${fmt(r.actual)}`:`Balance: ${fmt(r.actual)}`,r.note].filter(Boolean),amt:+r.delta||0,icon:saving?catIcon('savings',r.account):wIcon(r.wallet),tag:'<span class="pill">Reconciliation</span>'});});
-  return out.sort((a,b)=>(!a.date?-1:!b.date?1:b.date.localeCompare(a.date)));}
+  return out.sort((a,b)=>{
+    if(a.date!==b.date){if(!a.date)return 1;if(!b.date)return -1;return b.date.localeCompare(a.date);}
+    const createdA=+a.r.createdAt||0,createdB=+b.r.createdAt||0;
+    return createdB-createdA||String(b.r.id).localeCompare(String(a.r.id));
+  });}
 function rowHtml(it){const cls=it.mv?'mv':it.amt>0?'in':'';const sign=it.mv?'':it.amt>0?'+':it.amt<0?'−':'';
   return `<div class="trow" data-kind="${it.kind}" data-id="${it.r.id}"><div class="tmain">${it.icon}<div class="tt"><b>${esc(it.title)} ${it.tag||''}</b><small>${it.sub.map(esc).join(' · ')||'&nbsp;'}</small></div><div class="ta ${cls}">${sign}${fmt(Math.abs(it.amt))}</div></div></div>`;}
 function dayLabel(d){if(!d) return 'Pending';const t=today(),y=iso(new Date(Date.now()-864e5));if(d===t) return 'Today';if(d===y) return 'Yesterday';
@@ -275,8 +280,8 @@ function renderDash(){
     ${status}
     <div class="hm-stats"><div><span>Net worth</span><b>${fmt(now.cash+now.totalSav-now.owed-sum(S.debts,debtOutstanding))}</b></div>${now.owed>0.005?`<div><span>Card owed</span><b>${fmt(now.owed)}</b></div>`:`<div><span>Total savings</span><b>${fmt(now.totalSav)}</b></div>`}<div><span>Total due before payday</span><b>${fmt(ubTotal)}</b></div></div>`;
   // budget card
-  const monthExp=S.expenses.filter(e=>inR(e.date,mA,mB)), budgetExp=monthExp.filter(e=>e.budgeted!==false);
-  const budTotal=S.lists.expense.reduce((s,c)=>s+(+S.budget[c]||0),0), spentM=sum(budgetExp), outsideSpend=sum(monthExp.filter(e=>e.budgeted===false)), used=budTotal?spentM/budTotal:0, left=budTotal-spentM;
+  const monthExp=S.expenses.filter(e=>inR(e.date,mA,mB)), budgetExp=monthExp.filter(isBudgetExpense);
+  const budTotal=S.lists.expense.reduce((s,c)=>s+(+S.budget[c]||0),0), spentM=sum(budgetExp), outsideSpend=sum(monthExp.filter(e=>!isBudgetExpense(e))), used=budTotal?spentM/budTotal:0, left=budTotal-spentM;
   const isCur=month.slice(0,7)===t.slice(0,7), daysLeft=isCur?eom(y,m).getDate()-P(t).getDate()+1:0;
   const rc=used>1?'var(--red)':used>=.8?'var(--amber)':'var(--em)';
   $('budgetCard').innerHTML=budTotal?`<div class="ring lg" style="--p:${Math.min(used,1)*100};--rc:${rc}"><span>${Math.round(used*100)}%</span></div><div style="min-width:0"><div class="l">Budget left · ${d.toLocaleDateString('en-US',{month:'long'})}</div><div class="v ${left<0?'neg':''}">${left<0?fmt(-left)+' over':fmt(left)}</div><div class="s">${fmt(spentM)} of ${fmt(budTotal)} spent${isCur?` · ${daysLeft} day${daysLeft===1?'':'s'} left`:''}</div></div>`
@@ -300,12 +305,23 @@ function renderDash(){
     return `<div class="brow"><div class="bn">${catIcon('expense',x.c)}<span>${esc(x.c)}</span></div><div class="bb"><div class="bar"><i class="${cls}" style="width:${Math.min(r,1)*100}%"></i></div></div><div class="bv"><b class="${x.bd&&x.sp>x.bd?'neg':''}">${fmt(x.sp)}</b>${x.bd?'of '+fmt(x.bd):'no budget'}</div></div>`;}).join('')+
     `${budTotal?`<div class="brow" style="font-weight:800"><div class="bn"><span>Total</span></div><div class="bb"><div class="bar"><i class="${used>1?'over':used>=.8?'near':''}" style="width:${Math.min(used,1)*100}%"></i></div></div><div class="bv"><b>${fmt(spentM)}</b>of ${fmt(budTotal)}</div></div>`:''}${outsideSpend?`<div class="brow"><div class="bn"><span>Outside monthly budget</span></div><div class="bb"></div><div class="bv"><b>${fmt(outsideSpend)}</b>not included</div></div>`:''}<div class="note">Categories with no budget and no spending are hidden.</div>`
     :emptyState('gauge','No budget or spending yet','Set category limits to see progress here.','<button class="btn sec sm" data-goto="settings">Set budget</button>');
-  if(secOpen('spend')){const pExp=S.expenses.filter(e=>inR(e.date,a,b));
-    const cats=S.lists.expense.map((c,i)=>({c,v:sum(pExp.filter(e=>e.type===c&&e.budgeted!==false)),col:PAL[i%PAL.length]})).filter(x=>x.v>0);
-    const outside=sum(pExp.filter(e=>e.budgeted===false));
-    if(outside)cats.push({c:'Outside monthly budget',v:outside,col:'#64748B'});
-    mkChart('chCat',{type:'doughnut',data:{labels:cats.map(x=>x.c),datasets:[{data:cats.map(x=>x.v),backgroundColor:cats.map(x=>x.col),borderColor:cssv('--card'),borderWidth:3,hoverOffset:8,borderRadius:6}]},
-      options:{responsive:true,maintainAspectRatio:false,cutout:'68%',plugins:{legend:{position:innerWidth<760?'bottom':'right'},tooltip:{callbacks:{label:c=>`${c.label}: ${fmt(c.raw)} (${pct(c.raw/p.exp)})`}}}}});}
+  if(secOpen('spend')){
+    const periodExpenses=S.expenses.filter(e=>inR(e.date,a,b));
+    const budgetExpenses=periodExpenses.filter(isBudgetExpense),outsideExpenses=periodExpenses.filter(e=>!isBudgetExpense(e));
+    const budgetTotal=sum(budgetExpenses),outsideTotal=sum(outsideExpenses),totalSpend=budgetTotal+outsideTotal;
+    const chartOptions=(denominator)=>({responsive:true,maintainAspectRatio:false,cutout:'68%',
+      plugins:{legend:{position:innerWidth<760?'bottom':'right'},tooltip:{callbacks:{label:item=>`${item.label}: ${fmt(item.raw)} (${denominator?pct(item.raw/denominator):'0.0%'})`}}}});
+    const makeCategoryData=expenses=>{
+      const categories=[...new Set(expenses.map(expense=>expense.type))];
+      return {labels:categories,datasets:[{data:categories.map(category=>sum(expenses.filter(expense=>expense.type===category))),
+        backgroundColor:categories.map((_,index)=>PAL[index%PAL.length]),borderColor:cssv('--card'),borderWidth:3,hoverOffset:8,borderRadius:6}]};
+    };
+    mkChart('chSpendScope',{type:'doughnut',data:{labels:['Part of monthly budget','Outside monthly budget'],
+      datasets:[{data:[budgetTotal,outsideTotal],backgroundColor:[cssv('--em'),cssv('--violet')],borderColor:cssv('--card'),borderWidth:3,hoverOffset:8,borderRadius:6}]},
+      options:chartOptions(totalSpend)});
+    mkChart('chCat',{type:'doughnut',data:makeCategoryData(budgetExpenses),options:chartOptions(budgetTotal)});
+    mkChart('chExtraCat',{type:'doughnut',data:makeCategoryData(outsideExpenses),options:chartOptions(outsideTotal)});
+  }
   // flow section
   const sal=c=>sum(S.income.filter(r=>r.type==='Salary'&&payCycle(r)===c&&r.covStart>=mA&&r.covEnd<=mB));
   const a15=sal('1st-15th'),a30=sal('16th-Month End'),st=S.settings,e15=+st.sal15||0,e30=+st.sal30||0;
@@ -329,7 +345,7 @@ function renderCompare(month){
   const pd=new Date(y,m-1,1),py=pd.getFullYear(),pm=pd.getMonth();
   let a1=iso(new Date(y,m,1)),b1=iso(eom(y,m)),a0=iso(pd),b0=iso(eom(py,pm));
   if(isCur){const day=P(t).getDate();b1=t;b0=iso(new Date(py,pm,Math.min(day,eom(py,pm).getDate())));}
-  const c1={},c0={};S.expenses.forEach(e=>{const v=+e.amount||0,c=e.budgeted===false?'Outside monthly budget':e.type;if(inR(e.date,a1,b1))c1[c]=(c1[c]||0)+v;if(inR(e.date,a0,b0))c0[c]=(c0[c]||0)+v;});
+  const c1={},c0={};S.expenses.forEach(e=>{const v=+e.amount||0,c=isBudgetExpense(e)?e.type:'Outside monthly budget';if(inR(e.date,a1,b1))c1[c]=(c1[c]||0)+v;if(inR(e.date,a0,b0))c0[c]=(c0[c]||0)+v;});
   const T1=sum(Object.values(c1),x=>x),T0=sum(Object.values(c0),x=>x);
   $('cmpTitle').textContent=`vs ${pd.toLocaleDateString('en-US',{month:'long'})}${isCur?' (same days)':''}`;
   const pill=(a,b)=>{if(b<=0) return a>0?'<span class="pill warn">New</span>':'';const c=(a-b)/b;if(Math.abs(c)<.005) return '<span class="pill">Same</span>';return `<span class="pill ${c>0?'bad':'good'}">${c>0?'▲':'▼'} ${Math.abs(c*100).toFixed(0)}%</span>`;};
@@ -367,7 +383,7 @@ function renderHeat(month){
     h+=`<div class="hc l${lvl(v)}${ds===t?' today':''}${ds>t?' future':''}${ds===heatSel?' sel':''}" data-heat="${ds}" title="${nice(ds)}: ${fmt(v)}"><span>${k}</span>${v?`<small>${kfmt(v)}</small>`:''}</div>`;}
   let det='';
   if(heatSel&&heatSel.slice(0,7)===month.slice(0,7)){const es=S.expenses.filter(e=>e.date===heatSel);
-    det=`<div class="hdetail"><b>${nice(heatSel)}</b> · ${fmt(tot[heatSel]||0)}${es.length?es.map(e=>`<div class="row"><span class="catcell">${catIcon('expense',e.type)}${esc(e.type)}${e.budgeted===false?'<span class="pill">Outside monthly budget</span>':''}${e.note?`&nbsp;<span style="color:var(--muted)">· ${esc(e.note)}</span>`:''}</span><b>${fmt(e.amount)}</b></div>`).join(''):'<div class="note">No spending this day.</div>'}</div>`;}
+    det=`<div class="hdetail"><b>${nice(heatSel)}</b> · ${fmt(tot[heatSel]||0)}${es.length?es.map(e=>`<div class="row"><span class="catcell">${catIcon('expense',e.type)}${esc(e.type)}${!isBudgetExpense(e)?'<span class="pill">Outside monthly budget</span>':''}${e.note?`&nbsp;<span style="color:var(--muted)">· ${esc(e.note)}</span>`:''}</span><b>${fmt(e.amount)}</b></div>`).join(''):'<div class="note">No spending this day.</div>'}</div>`;}
   $('heatMap').innerHTML=`<div class="heat">${h}</div>
     <div class="hlegend">Less <i style="background:var(--soft)"></i><i style="background:var(--h1)"></i><i style="background:var(--h2)"></i><i style="background:var(--h3)"></i><i style="background:var(--h4)"></i> More</div>
     <div class="note">${top?`Highest: <b>${short(P(top))}</b> (${fmt(tot[top])}) · `:''}No-spend days so far: <b>${noSpend}</b>. Tap a day for details.</div>${det}`;
@@ -462,8 +478,7 @@ function renderSavings(){
     const movedIn=sum(rs.filter(r=>r.action==='Transfer'&&r.toAccount===a)),movedOut=sum(rs.filter(r=>r.action==='Transfer'&&(r.fromAccount||r.account)===a));
     const recon=sum(S.adjustments.filter(r=>r.target==='savings'&&r.account===a&&inR(r.date,st,t)),r=>r.delta);
     const extra=a==='Goal'?(+s.startGoal||0)-b.goalExp:a===otherAccount?(+s.startOther||0):0;return {a,dep,wd,movedIn,movedOut,recon,extra,bal:savingsBal(a,t)};});
-  $('savAcctList').innerHTML=(adjustmentsAvailable?'':`<div class="alert warn">Savings reconciliation is unavailable until the updated Firestore rules are published.</div>`)+ac.map(x=>`<div class="brow"><div class="bn">${catIcon('savings',x.a)}<span>${esc(x.a)}</span></div><div class="bb" style="font-size:11px;color:var(--muted)">+${fmt(x.dep)} · −${fmt(x.wd)}${x.movedIn?` · transfer in ${fmt(x.movedIn)}`:''}${x.movedOut?` · transfer out ${fmt(x.movedOut)}`:''}${x.recon?` · recon ${x.recon>0?'+':''}${fmt(x.recon)}`:''}${x.extra?` · start ${fmt(x.extra)}`:''}</div><div class="bv"><b class="${x.bal<0?'neg':''}">${fmt(x.bal)}</b>net${adjustmentsAvailable?`<button class="linkbtn" type="button" data-sav-reconcile="${esc(x.a)}">Reconcile</button>`:''}</div></div>`).join('')+
-    '';
+  $('savAcctList').innerHTML=(adjustmentsAvailable?'':`<div class="alert warn">Savings reconciliation is unavailable until the updated Firestore rules are published.</div>`)+ac.map(x=>`<div class="sav-row"><div class="sav-row-main"><div class="sav-name">${catIcon('savings',x.a)}<b>${esc(x.a)}</b></div><div class="sav-balance"><b class="${x.bal<0?'neg':''}">${fmt(x.bal)}</b><span>net</span>${adjustmentsAvailable?`<button class="linkbtn" type="button" data-sav-reconcile="${esc(x.a)}">Reconcile</button>`:''}</div></div><div class="sav-detail">+${fmt(x.dep)} deposited · −${fmt(x.wd)} withdrawn${x.movedIn?` · ${fmt(x.movedIn)} transfer in`:''}${x.movedOut?` · ${fmt(x.movedOut)} transfer out`:''}${x.recon?` · recon ${x.recon>0?'+':''}${fmt(x.recon)}`:''}${x.extra?` · start ${fmt(x.extra)}`:''}</div></div>`).join('');
   const it=buildItems(['savings']);
   $('savList').innerHTML=it.length?groupsHtml(it):emptyState('piggy','No savings activity yet','Deposit to an account to start building savings.','<button class="btn sm" data-new="savings" data-action="Deposit">+ Deposit</button>');
 }
@@ -547,9 +562,12 @@ $('mnav').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)
   if(b.dataset.tab) go(b.dataset.tab);});
 $('fab').onclick=()=>openQA();
 $('topRight').addEventListener('click',e=>{
+  if(e.target.closest('.notifWrap'))e.stopPropagation();
   const button=e.target.closest('#notificationButton');
   if(button){
     const panel=$('notificationPanel'),open=panel.classList.toggle('show');
+    if(open&&matchMedia('(max-width: 760px)').matches)
+      panel.style.top=`${Math.round(button.getBoundingClientRect().bottom+10)}px`;
     button.setAttribute('aria-expanded',String(open));return;
   }
   if(e.target.closest('#notificationMarkAll')){
@@ -572,7 +590,7 @@ $('topRight').addEventListener('click',e=>{
 document.addEventListener('click',e=>{
   if(e.target.closest('.notifWrap'))return;
   const panel=$('notificationPanel'),button=$('notificationButton');
-  if(panel&&button){panel.classList.remove('show');button.setAttribute('aria-expanded','false');}
+  if(panel&&button){panel.classList.remove('show');panel.style.top='';button.setAttribute('aria-expanded','false');}
 });
 
 /* ================= SHEET & DIALOG ================= */
@@ -761,7 +779,7 @@ $('debtPayForm').addEventListener('submit',e=>{
   const category='Debt repayment';
   if(!S.lists.expense.includes(category)){S.lists.expense.push(category);S.budget[category]=0;cMeta();}
   const note=[`Debt repayment · ${debt.name}`,f.elements.note.value.trim()].filter(Boolean).join(' · ');
-  const record={id:uid(),type:category,amount,date:f.elements.date.value,note,debtId:debt.id,debtInstallmentId:item.id,...srcToFields(f.elements.wallet.value)};
+  const record={id:uid(),createdAt:Date.now(),type:category,amount,date:f.elements.date.value,note,debtId:debt.id,debtInstallmentId:item.id,budgeted:false,...srcToFields(f.elements.wallet.value)};
   cPut('expenses',record);closeSheet();toast('Debt payment recorded',{label:'Undo',fn:()=>{cloud.bulk([{k:'expenses',id:record.id,del:true}]);toast('Payment removed');}});buzz();
 });
 Object.entries(FORMS).forEach(([kind,c])=>{
@@ -769,6 +787,7 @@ Object.entries(FORMS).forEach(([kind,c])=>{
   f.addEventListener('submit',e=>{
     e.preventDefault();
     const o={}; [...f.elements].forEach(el=>{if(!el.name||el.type==='submit'||el.type==='button') return; o[el.name]=c.num.includes(el.name)?parseAmt(el.value):el.value.trim();});
+    const cur=editing[kind]&&S[kind].find(r=>r.id===editing[kind]);
     const amtKey=c.num.find(k=>k!=='dueDay');
     if(amtKey&&!(o[amtKey]>0)){toast('Enter an amount');return;}
     if((kind==='bills'||kind==='goals')&&!o.name){toast('Enter a name');return;}
@@ -779,13 +798,12 @@ Object.entries(FORMS).forEach(([kind,c])=>{
     if(kind==='savings'&&o.action==='Transfer'&&o.account===o.toAccount){toast('Choose two different savings accounts');return;}
     if(kind==='allocs'&&!o.goal){toast('Add a goal first');return;}
     if(['expenses','transfers','savings','allocs'].includes(kind)&&!o.date) o.date=today();
-    if(kind==='expenses'){Object.assign(o,srcToFields(o.src));o.budgeted=o.budgetScope!=='extra';delete o.src;delete o.budgetScope;}
+    if(kind==='expenses'){Object.assign(o,srcToFields(o.src));o.budgeted=cur&&cur.debtId?false:o.budgetScope!=='extra';delete o.src;delete o.budgetScope;}
     if(kind==='savings'){
       if(o.action==='Transfer')delete o.wallet;
       else delete o.toAccount;
     }
     if(!cloudOK()) return;
-    const cur=editing[kind]&&S[kind].find(r=>r.id===editing[kind]);
     if(kind==='expenses'&&cur&&cur.debtId){
       if(o.date>today()){toast('Debt repayments cannot be dated in the future');return;}
       if(o.paidFrom!=='Cash Balance'||isCredit(wById(o.wallet))){toast('Debt repayments must be paid from a non-credit wallet');return;}
@@ -797,7 +815,11 @@ Object.entries(FORMS).forEach(([kind,c])=>{
       }
     }
     if(!cur&&kind==='bills'){o.created=today();o.skips=[];}
-    cPut(kind,cur?{...cur,...o}:{id:uid(),...o});
+    const activityKinds=['expenses','income','transfers','savings','allocs'];
+    const saved=cur
+      ?{...cur,...o,...(activityKinds.includes(kind)?{createdAt:cur.createdAt||Date.now()}:{})}
+      :{id:uid(),...(activityKinds.includes(kind)?{createdAt:Date.now()}:{}),...o};
+    cPut(kind,saved);
     closeSheet(); toast(cur?'Changes saved':`${cap(c.noun)} added`); buzz();
   });
 });
@@ -891,14 +913,16 @@ $('recForm').addEventListener('submit',e=>{
     if(!S.lists.savings.includes(account)){toast('This savings account is no longer available');return;}
     const current=savingsBal(account,date,recId||undefined),delta=actual-current;
     if(!Number.isFinite(delta)||Math.abs(delta)>1000000000){toast('The adjustment is outside the allowed amount range');return;}
-    cPut('adjustments',{id:recId||uid(),target:'savings',account,date,actual,delta,note:f.elements.note.value.trim()});
+    const previous=S.adjustments.find(item=>item.id===recId);
+    cPut('adjustments',{id:recId||uid(),createdAt:previous&&previous.createdAt||Date.now(),target:'savings',account,date,actual,delta,note:f.elements.note.value.trim()});
     closeSheet();toast(recId?'Savings reconciliation updated':'Savings reconciled');buzz();return;
   }
   const w=wById(f.dataset.wallet);
   if(!w){toast('This wallet is no longer available');return;}
   const current=walletBal(w,date,recId||undefined),delta=(isCredit(w)?-actual:actual)-current;
   if(!Number.isFinite(delta)||Math.abs(delta)>1000000000){toast('The adjustment is outside the allowed amount range');return;}
-  const rec={id:recId||uid(),wallet:w.id,date,actual,delta,note:f.elements.note.value.trim()};
+  const previous=S.adjustments.find(item=>item.id===recId);
+  const rec={id:recId||uid(),createdAt:previous&&previous.createdAt||Date.now(),wallet:w.id,date,actual,delta,note:f.elements.note.value.trim()};
   cPut('adjustments',rec);closeSheet();toast(recId?'Reconciliation updated':'Wallet reconciled');buzz();
 });
 async function deleteWallet(id){
@@ -927,7 +951,7 @@ $('qaForm').addEventListener('submit',e=>{e.preventDefault();const f=e.target,on
   const amt=parseAmt(f.elements.amount.value); if(!(amt>0)){toast('Enter an amount');$('qaAmt').focus();return;}
   if(!on){toast('Pick a category');return;}
   if(!cloudOK()) return;
-  const rec={id:uid(),type:on.dataset.qcat,amount:amt,date:f.elements.date.value||today(),note:f.elements.note.value.trim(),budgeted:f.elements.budgetScope.value!=='extra',...srcToFields(f.elements.src.value)};
+  const rec={id:uid(),createdAt:Date.now(),type:on.dataset.qcat,amount:amt,date:f.elements.date.value||today(),note:f.elements.note.value.trim(),budgeted:f.elements.budgetScope.value!=='extra',...srcToFields(f.elements.src.value)};
   const bill=qaCtx&&qaCtx.billId; if(bill){rec.billId=qaCtx.billId;rec.billMonth=qaCtx.billMonth;}
   LS.set('fh.lastSrc',f.elements.src.value);
   cPut('expenses',rec); closeSheet(); buzz();
@@ -1014,7 +1038,7 @@ $('btnExport').onclick=downloadBackup;
 $('btnCsv').onclick=()=>{
   const q=v=>`"${String(v??'').replace(/"/g,'""')}"`, rows=[['Kind','Date','Type/Category','Amount','Paid From / Action','Account','Wallet','Description/Note','Budget treatment']];
   S.income.forEach(r=>rows.push(['Income',r.date,r.type,r.amount,'','',wName(wOf(r)),r.desc,'']));
-  S.expenses.forEach(r=>rows.push(['Expense',r.date,r.type,r.amount,r.paidFrom,'',wName(srcOf(r)),r.note,r.budgeted===false?'Outside monthly budget':'Monthly budget']));
+  S.expenses.forEach(r=>rows.push(['Expense',r.date,r.type,r.amount,r.paidFrom,'',wName(srcOf(r)),r.note,isBudgetExpense(r)?'Monthly budget':'Outside monthly budget']));
   S.savings.forEach(r=>rows.push(['Savings',r.date,'',r.amount,r.action,r.action==='Transfer'?`${r.account} → ${r.toAccount}`:r.account,r.action==='Transfer'?'':wName(wOf(r)),r.note,'']));
   S.transfers.forEach(r=>rows.push(['Transfer',r.date,'',r.amount,wName(r.from)+' → '+wName(r.to),'','',r.note,'']));
   S.adjustments.forEach(r=>rows.push(['Reconciliation',r.date,'',r.delta,'',r.target==='savings'?r.account:'',r.target==='savings'?'':wName(r.wallet),`${r.target==='savings'?'Savings balance':isCredit(wById(r.wallet))?'Amount owed':'Balance'}: ${r.actual}${r.note?` · ${r.note}`:''}`,'']));
